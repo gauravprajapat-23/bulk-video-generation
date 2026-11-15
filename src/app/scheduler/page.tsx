@@ -533,18 +533,11 @@ function UploadSchedulerContent() {
           madeForKids: row.madeForKids,
         };
 
-        let videoBlobUrl: string | null = null;
-        if (project.outputBlobKey) {
-          try {
-            const blob = await getBlob(project.outputBlobKey);
-            if (blob) {
-              const result = await uploadVideoToBackend(blob, project.id);
-              videoBlobUrl = result.videoUrl;
-            }
-          } catch {
-            // video upload failed — continue anyway
-          }
-        }
+        if (!project.outputBlobKey) throw new Error("Render the video before scheduling");
+        const blob = await getBlob(project.outputBlobKey);
+        if (!blob) throw new Error("Rendered video is missing from browser storage");
+        const uploaded = await uploadVideoToBackend(blob, project.id);
+        const videoBlobUrl = uploaded.videoUrl;
 
         await createServerSchedule({
           projectId: project.id,
