@@ -155,6 +155,10 @@ export async function listYouTubeChannels() {
   return apiFetch("/youtube/channels");
 }
 
+export async function disconnectServerYoutubeChannel(channelId: string): Promise<void> {
+  await apiFetch(`/youtube/channels/${encodeURIComponent(channelId)}`, { method: "DELETE" });
+}
+
 export async function serverUpload(params: {
   projectId?: string;
   title: string;
