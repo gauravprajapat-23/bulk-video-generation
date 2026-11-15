@@ -926,7 +926,8 @@ async function buildAudioGraph(
     const trimEndSec = assignment.trimEndMs
       ? Math.min(assignment.trimEndMs / 1000, audioBuffer.duration)
       : audioBuffer.duration;
-    const usableSec = Math.max(0.05, trimEndSec - trimStartSec);
+    const usableSec = trimEndSec - trimStartSec;
+    if (!Number.isFinite(usableSec) || usableSec <= 0) throw new Error("Invalid audio trim range");
 
     if (assignment.loopIfShorter && usableSec * 1000 < totalDurationMs) {
       source.loop = true;
@@ -973,9 +974,13 @@ export async function renderVideoLocally(
   }
   const bitmapById = await loadImageBitmaps(imageAssets);
   if (imageAssets.some((asset) => !bitmapById.has(asset.id))) {
+    for (const bitmap of bitmapById.values()) bitmap.close();
     throw new Error("A project image could not be decoded; rendering stopped to prevent blank slides.");
   }
-  if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
+  if (signal?.aborted) {
+    for (const bitmap of bitmapById.values()) bitmap.close();
+    throw new DOMException("Render cancelled", "AbortError");
+  }
   const watermarkBitmap = watermarkAsset
     ? (await loadImageBitmaps([watermarkAsset])).get(watermarkAsset.id) ?? null
     : null;
@@ -1028,6 +1033,8 @@ export async function renderVideoLocally(
       try { audioGraph?.source.stop(); } catch { /* may not have started */ }
       void audioGraph?.audioCtx.close().catch(() => {});
       for (const track of combinedStream.getTracks()) track.stop();
+      for (const bitmap of bitmapById.values()) bitmap.close();
+      watermarkBitmap?.close();
     }
 
     function fail(error: Error) {
