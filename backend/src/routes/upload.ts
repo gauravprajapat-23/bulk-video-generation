@@ -13,7 +13,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".webm";
+    const ext = path.extname(file.originalname).toLowerCase() || ".webm";
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
   },
 });
@@ -36,7 +36,19 @@ router.post("/upload-video", requireAuth, upload.single("video"), async (req: Re
     res.status(400).json({ error: "No video file provided" });
     return;
   }
+  const { userId } = (req as any).auth;
   const { projectId } = req.body;
+  try {
+    await sql`
+      INSERT INTO uploaded_media (filename, user_id, project_id, size_bytes)
+      VALUES (${req.file.filename}, ${userId}, ${typeof projectId === "string" ? projectId : null}, ${req.file.size})
+    `;
+  } catch (err) {
+    await fs.promises.unlink(req.file.path).catch(() => {});
+    console.error("[upload-video] media registration failed:", err);
+    res.status(500).json({ error: "Unable to register uploaded video" });
+    return;
+  }
   const videoUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
   console.log("[upload-video] saved:", req.file.filename, "size:", req.file.size, "projectId:", projectId);
   res.json({ videoUrl, filename: req.file.filename, sizeBytes: req.file.size, projectId });
