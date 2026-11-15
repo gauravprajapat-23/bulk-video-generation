@@ -8,7 +8,8 @@
     "start": "node dist/index.js",
     "lint": "tsc --noEmit",
     "test:security": "tsx --test tests/*.test.ts",
-    "check:security": "npm run lint && npm run test:security && npm run build"
+    "check:security": "npm run lint && npm run test:security && npm run build",
+    "test:scheduler:db": "tsx --test tests/integration/schedulerClaims.test.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
