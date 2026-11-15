@@ -11,6 +11,7 @@ import type { ParsedCsv } from "@/lib/csv";
 import type { BulkImageDesign, DesignPage, DesignElement, TextDesignElement } from "@/lib/bulkImageTypes";
 import { extractVideoMetadata, applyCsvPlaceholders } from "@/lib/placeholders";
 import { newId, nowIso } from "@/lib/id";
+import { normalizeRetryIndices, imageStartForRow } from "@/services/bulkRetryMapping";
 
 /** Metadata stored on each VideoProject.metadata field from CSV row data. */
 export interface CsvProjectMetadata {
@@ -316,7 +317,7 @@ export function createProjectsFromCsv(
     const row = csv.rows[i];
     const originalRowIndex = sourceRowIndices?.[i] ?? i;
     const meta = extractVideoMetadata(row);
-    const imageStart = originalRowIndex * imagesPerVideo;
+    const imageStart = imageStartForRow(originalRowIndex, imagesPerVideo);
     const imageSlice = generatedImages.slice(imageStart, imageStart + imagesPerVideo);
 
     // Merge per-row CSV animation preset with default preset
@@ -419,9 +420,7 @@ export function createProjectsWithRetry(
     imagesPerVideo = 1,
   } = options;
 
-  const indices = [...new Set(failedRowIndices)].filter(
-    (i) => Number.isInteger(i) && i >= 0 && i < csv.rows.length,
-  );
+  const indices = normalizeRetryIndices(failedRowIndices, csv.rows.length);
   const filteredCsv: ParsedCsv = {
     headers: csv.headers,
     rows: indices.map((i) => csv.rows[i]),
