@@ -816,11 +816,16 @@ function UploadSchedulerContent() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" ? "warn" : "accent"}>{s.status}</Badge>
+                  <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" || s.status === "needs_review" ? "warn" : "accent"}>{s.status === "needs_review" ? "Needs review" : s.status}</Badge>
                   {typeof s.video_blob_url === "string" && s.video_blob_url.length > 0 && (
                     <Button size="sm" variant="ghost" onClick={() => setServerPreviewUrl(s.video_blob_url)}>
                       <Eye size={12} /> Preview
                     </Button>
+                  )}
+                  {s.status === "needs_review" && (
+                    <span className="max-w-48 text-[10px] text-muted">
+                      Check your YouTube channel before attempting another upload.
+                    </span>
                   )}
                   {(s.status === "pending" || s.status === "paused") && (
                     <>
