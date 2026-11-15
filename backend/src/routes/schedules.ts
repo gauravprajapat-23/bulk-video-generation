@@ -96,7 +96,16 @@ router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
   try {
-    await sql`DELETE FROM upload_schedules WHERE id = ${id} AND user_id = ${userId}`;
+    const rows = await sql`
+      DELETE FROM upload_schedules
+      WHERE id = ${id} AND user_id = ${userId}
+        AND status IN ('pending', 'paused')
+      RETURNING id
+    `;
+    if (!rows.length) {
+      res.status(409).json({ error: "Only pending or paused schedules can be deleted" });
+      return;
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error("[schedules] delete error:", err);
