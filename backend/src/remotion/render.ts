@@ -21,7 +21,15 @@ let bundled: string = "";
 async function getBundle(): Promise<string> {
   if (bundled && fs.existsSync(bundled)) return bundled;
 
-  const entryPoint = path.join(__dirname, "Root.tsx");
+  // In production, __dirname points to dist/remotion while TSX source
+  // remains in src/remotion. Prefer source files for the Remotion bundler.
+  const candidates = [
+    path.join(__dirname, "Root.tsx"),
+    path.resolve(__dirname, "../../src/remotion/Root.tsx"),
+    path.resolve(process.cwd(), "src/remotion/Root.tsx"),
+  ];
+  const entryPoint = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!entryPoint) throw new Error("Remotion TSX entrypoint not found; deploy backend/src/remotion alongside dist");
   console.log("[remotion] bundling from", entryPoint);
 
   bundled = await bundle({
