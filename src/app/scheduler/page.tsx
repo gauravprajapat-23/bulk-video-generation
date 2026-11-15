@@ -28,6 +28,7 @@ import {
   Eye,
 } from "lucide-react";
 import { VideoPreviewModal } from "@/components/scheduler/VideoPreviewModal";
+import { ServerVideoPreview } from "@/components/scheduler/ServerVideoPreview";
 import { BulkSeoTable } from "@/components/scheduler/BulkSeoTable";
 import { ScheduleCard } from "@/components/scheduler/ScheduleCard";
 import { UploadHistoryCard } from "@/components/scheduler/UploadHistoryCard";
@@ -85,6 +86,7 @@ import {
 
 function UploadSchedulerContent() {
   const hasHydrated = useHasHydrated();
+  const [serverPreviewUrl, setServerPreviewUrl] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const { show } = useToast();
 
@@ -815,6 +817,11 @@ function UploadSchedulerContent() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" ? "warn" : "accent"}>{s.status}</Badge>
+                  {typeof s.video_blob_url === "string" && s.video_blob_url.length > 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => setServerPreviewUrl(s.video_blob_url)}>
+                      <Eye size={12} /> Preview
+                    </Button>
+                  )}
                   {(s.status === "pending" || s.status === "paused") && (
                     <>
                       <Button
@@ -952,6 +959,8 @@ function UploadSchedulerContent() {
           <p className="text-xs text-muted">No automation rules yet.</p>
         )}
       </Card>
+
+      {serverPreviewUrl && <ServerVideoPreview mediaUrl={serverPreviewUrl} onClose={() => setServerPreviewUrl(null)} />}
 
       <VideoPreviewModal
         open={!!previewProject}
