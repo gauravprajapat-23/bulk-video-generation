@@ -353,15 +353,26 @@ export function createProjectsFromCsv(
         rawRow: row,
       };
 
+      // Recompute timing for the actual CSV row: variable-length text can
+      // require longer reading time than the first row used as a sample.
+      const textOverlaysPerSlide: TextOverlay[][] = design.pages.map((page) =>
+        extractTextOverlaysFromDesign(page, row, design.width, design.height),
+      );
+      const rowTimeline = buildPageTimeline(
+        design,
+        { defaultPageDurationMs, defaultTransitionDurationMs, defaultAnimationPreset: animationPreset },
+        textOverlaysPerSlide,
+      );
+
       const project = createProjectFn({
         title: projectTitle,
         width: design.width,
         height: design.height,
         defaultSlideDurationMs: defaultPageDurationMs,
-        transitionType: timeline[0]?.transitionIn || "fade",
+        transitionType: rowTimeline[0]?.transitionIn || "fade",
         metadata: {
           ...csvMeta,
-          timeline,
+          timeline: rowTimeline,
           designWidth: design.width,
           designHeight: design.height,
           totalPages: design.pages.length,
@@ -370,11 +381,6 @@ export function createProjectsFromCsv(
           animationPreset,
         },
       });
-
-      // Extract ALL text overlays from each design page for the renderer to animate
-      const textOverlaysPerSlide: TextOverlay[][] = design.pages.map((page) =>
-        extractTextOverlaysFromDesign(page, row, design.width, design.height),
-      );
 
       addImagesToProjectFn(project.id, imageSlice.map((img) => img.id), textOverlaysPerSlide);
       projects.push(project);
