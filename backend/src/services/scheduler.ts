@@ -123,20 +123,6 @@ async function processAutomationRules(): Promise<void> {
         `;
         if (!claimedSchedule.length) continue;
         const scheduleId = claimedSchedule[0].id;
-        console.log(`[scheduler] rule ${rule.name}: no pending schedules for user ${rule.user_id}`);
-          continue;
-        }
-
-        // Assign the schedule to this rule and update its scheduled_at to now
-        const scheduleId = nextSchedule[0].id;
-        await sql`
-          UPDATE upload_schedules
-          SET automation_rule_id = ${rule.id},
-              scheduled_at = now(),
-              updated_at = now()
-          WHERE id = ${scheduleId}
-        `;
-
         console.log(`[scheduler] rule ${rule.name}: assigned schedule ${scheduleId} (upload ${uploadsToday + 1}/${rule.uploads_per_day} today)`);
         await uploadSchedule(scheduleId);
       } catch (err: any) {
