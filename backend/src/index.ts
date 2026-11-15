@@ -7,7 +7,7 @@ import helmet from "helmet";
 import path from "path";
 import { ensureTables } from "./db";
 import { startScheduler } from "./services/scheduler";
-import { requireAuth, verifyToken } from "./middleware/auth";
+import { requireAuth } from "./middleware/auth";
 import sql from "./db";
 import authRoutes from "./routes/auth";
 import youtubeRoutes from "./routes/youtube";
@@ -43,7 +43,7 @@ app.use(express.json({ limit: "10mb" }));
 // Protected media delivery: authenticate AND check ownership before sending bytes.
 app.get("/uploads/:filename", requireAuth, async (req, res) => {
   const filename = req.params.filename;
-  if (!/^[a-zA-Z0-9_-]+\\.(webm|mp4|mov|avi)$/i.test(filename)) {
+  if (!/^[a-zA-Z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(filename)) {
     res.status(404).json({ error: "Media not found" });
     return;
   }
