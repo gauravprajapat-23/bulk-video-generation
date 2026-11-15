@@ -316,6 +316,7 @@ export function createProjectsFromCsv(
   for (let i = 0; i < csv.rows.length; i += 1) {
     const row = csv.rows[i];
     const originalRowIndex = sourceRowIndices?.[i] ?? i;
+    try {
     const meta = extractVideoMetadata(row);
     const imageStart = imageStartForRow(originalRowIndex, imagesPerVideo);
     const imageSlice = generatedImages.slice(imageStart, imageStart + imagesPerVideo);
@@ -335,7 +336,6 @@ export function createProjectsFromCsv(
       continue;
     }
 
-    try {
       const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${originalRowIndex + 1}`;
 
       const csvMeta: CsvProjectMetadata = {
