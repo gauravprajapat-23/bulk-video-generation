@@ -126,6 +126,13 @@ export async function ensureTables() {
     await sql`CREATE INDEX IF NOT EXISTS idx_youtube_oauth_expiry ON youtube_oauth_states(expires_at)`;
 
 
+    // Additive schema changes; existing schedules remain readable.
+    await sql`ALTER TABLE upload_schedules ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE upload_schedules ADD COLUMN IF NOT EXISTS youtube_video_id TEXT`;
+    // Historical duplicates must be reconciled before applying this constraint.
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_youtube_uploads_schedule
+      ON youtube_uploads(schedule_id) WHERE schedule_id IS NOT NULL`;
+
     await sql`CREATE INDEX IF NOT EXISTS idx_schedules_pending ON upload_schedules(scheduled_at) WHERE status = 'pending'`;
     await sql`CREATE INDEX IF NOT EXISTS idx_schedules_user ON upload_schedules(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_uploads_user ON youtube_uploads(user_id)`;
