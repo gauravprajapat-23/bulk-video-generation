@@ -968,7 +968,13 @@ export async function renderVideoLocally(
   }
 
   const timeline = getSlideTimeline(project);
+  if (!Number.isFinite(timeline.totalDurationMs) || timeline.totalDurationMs <= 0) {
+    throw new Error("Invalid video duration");
+  }
   const bitmapById = await loadImageBitmaps(imageAssets);
+  if (imageAssets.some((asset) => !bitmapById.has(asset.id))) {
+    throw new Error("A project image could not be decoded; rendering stopped to prevent blank slides.");
+  }
   if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
   const watermarkBitmap = watermarkAsset
     ? (await loadImageBitmaps([watermarkAsset])).get(watermarkAsset.id) ?? null
@@ -983,6 +989,7 @@ export async function renderVideoLocally(
   let audioGraph: AudioGraph | null = null;
   if (audioAsset && project.audioAssignment) {
     audioGraph = await buildAudioGraph(audioAsset, project.audioAssignment, timeline.totalDurationMs);
+    if (!audioGraph) throw new Error("Assigned audio could not be loaded or decoded");
   }
 
   if (signal?.aborted) {
