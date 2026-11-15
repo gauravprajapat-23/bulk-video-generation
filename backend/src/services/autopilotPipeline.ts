@@ -118,6 +118,8 @@ export async function runAutopilotTickForConfig(
     return result;
   }
   config = claimed[0];
+  let uncertainUpload = false;
+  let cursorPersisted = false;
 
   try {
   const design: BulkImageDesign = config.design_data;
@@ -198,6 +200,8 @@ export async function runAutopilotTickForConfig(
         const title = resolveTemplate(config.default_title_template || "{{headline}} #shorts", row);
         const description = resolveTemplate(config.default_description_template || "{{description}}", row);
 
+        // From this point, an API error may conceal a successful YouTube upload.
+        uncertainUpload = true;
         const uploadResult = await uploadVideoForUser(
           config.user_id,
           videoBuffer,
@@ -223,6 +227,7 @@ export async function runAutopilotTickForConfig(
           WHERE id = ${jobId}
         `;
 
+        uncertainUpload = false;
         result.generated++;
         result.uploaded++;
 
@@ -257,6 +262,7 @@ export async function runAutopilotTickForConfig(
         updated_at = now()
       WHERE id = ${config.id}
     `;
+    cursorPersisted = true;
 
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -265,6 +271,10 @@ export async function runAutopilotTickForConfig(
 
   return result;
   } finally {
+    if (uncertainUpload || (result.uploaded > 0 && !cursorPersisted)) {
+      console.error(`[autopilot] run ${runId} needs manual reconciliation; preserving durable claim`);
+      return result;
+    }
     // Never clear a claim owned by a different run.
     await sql`
       UPDATE autopilot_configs SET active_run_id = NULL,
