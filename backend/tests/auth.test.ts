@@ -8,7 +8,7 @@ test("signed JWT accepts valid claims and rejects tampering or expiry", async ()
   const { signToken, verifyToken } = await import("../src/middleware/auth");
   const token = signToken({ userId: "user-a", email: "user@example.com" });
   assert.deepEqual(verifyToken(token), { userId: "user-a", email: "user@example.com" });
-  assert.equal(verifyToken(token.slice(0, -1) + (token.endsWith("A") ? "B" : "A")), null);
+  assert.equal(verifyToken(token.slice(0, -10) + (token[token.length - 10] === "A" ? "B" : "A") + token.slice(-9)), null);
   assert.equal(verifyToken("not-a-jwt"), null);
 
   function sign(payload: Record<string, unknown>, header = { alg: "HS256", typ: "JWT" }) {
