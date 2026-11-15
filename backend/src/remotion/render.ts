@@ -87,28 +87,28 @@ export async function renderVideoWithRemotion(
   const outputFilename = `autopilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
   const outputPath = path.join(tmpDir, outputFilename);
 
-  await renderMedia({
-    composition,
-    serveUrl: bundleLocation,
-    codec: "h264",
-    outputLocation: outputPath,
-    inputProps: {
-      pages,
-      animationPreset,
-    },
-    onProgress: ({ progress }: { progress: number }) => {
-      if (Math.round(progress * 100) % 10 === 0) {
-        console.log(`[remotion] render progress: ${Math.round(progress * 100)}%`);
-      }
-    },
-  });
+  try {
+    await renderMedia({
+      composition,
+      serveUrl: bundleLocation,
+      codec: "h264",
+      outputLocation: outputPath,
+      inputProps: { pages, animationPreset },
+      onProgress: ({ progress }: { progress: number }) => {
+        if (Math.round(progress * 100) % 10 === 0) {
+          console.log(`[remotion] render progress: ${Math.round(progress * 100)}%`);
+        }
+      },
+    });
 
-  const stats = fs.statSync(outputPath);
-  console.log(`[remotion] render complete: ${outputPath} (${stats.size} bytes)`);
-
-  return {
-    outputPath,
-    durationMs: totalDurationMs,
-    sizeBytes: stats.size,
-  };
+    const stats = await fs.promises.stat(outputPath);
+    if (!stats.isFile() || stats.size < 1024) {
+      throw new Error("Remotion produced a missing or invalid-sized MP4");
+    }
+    console.log(`[remotion] render complete: ${outputPath} (${stats.size} bytes)`);
+    return { outputPath, durationMs: totalDurationMs, sizeBytes: stats.size };
+  } catch (error) {
+    await fs.promises.unlink(outputPath).catch(() => {});
+    throw error;
+  }
 }
