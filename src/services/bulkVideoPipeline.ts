@@ -316,7 +316,7 @@ export function createProjectsFromCsv(
     const row = csv.rows[i];
     const originalRowIndex = sourceRowIndices?.[i] ?? i;
     const meta = extractVideoMetadata(row);
-    const imageStart = i * imagesPerVideo;
+    const imageStart = originalRowIndex * imagesPerVideo;
     const imageSlice = generatedImages.slice(imageStart, imageStart + imagesPerVideo);
 
     // Merge per-row CSV animation preset with default preset
@@ -335,7 +335,7 @@ export function createProjectsFromCsv(
     }
 
     try {
-      const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${i + 1}`;
+      const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${originalRowIndex + 1}`;
 
       const csvMeta: CsvProjectMetadata = {
         csvRowIndex: originalRowIndex,
@@ -427,12 +427,8 @@ export function createProjectsWithRetry(
     rows: indices.map((i) => csv.rows[i]),
   };
 
-  const filteredImages = indices.flatMap((i) =>
-    generatedImages.slice(i * imagesPerVideo, (i + 1) * imagesPerVideo),
-  );
-
   return createProjectsFromCsv(
-    filteredImages,
+    generatedImages,
     filteredCsv,
     design,
     createProjectFn,
