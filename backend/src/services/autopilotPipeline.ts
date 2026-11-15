@@ -3,6 +3,9 @@
  * Runs the full cycle: generate images -> render video -> upload to YouTube.
  */
 import fs from "fs";
+import os from "os";
+import path from "path";
+import { pathToFileURL } from "url";
 import sql from "../db";
 import { renderAllPages, extractTextOverlays } from "./imageRenderer";
 import { renderVideoWithRemotion, type SlideData } from "../remotion/render";
@@ -171,11 +174,11 @@ export async function runAutopilotTickForConfig(
           );
 
           // Write image to temp file
-          const tmpPath = `/tmp/autopilot-slide-${jobId}-${pageIndex}.png`;
+          const tmpPath = path.join(os.tmpdir(), `autopilot-slide-${jobId}-${pageIndex}.png`);
           fs.writeFileSync(tmpPath, imageBuffers[pageIndex]);
 
           return {
-            imageUrl: `file://${tmpPath}`,
+            imageUrl: pathToFileURL(tmpPath).href,
             durationMs,
             transitionIn: page.transitionIn || "fade",
             transitionDurationMs: page.transitionDurationMs || 500,
@@ -238,7 +241,7 @@ export async function runAutopilotTickForConfig(
         try {
           fs.unlinkSync(renderResult.outputPath);
           for (let i = 0; i < design.pages.length; i++) {
-            fs.unlinkSync(`/tmp/autopilot-slide-${jobId}-${i}.png`);
+            fs.unlinkSync(path.join(os.tmpdir(), `autopilot-slide-${jobId}-${i}.png`));
           }
         } catch { /* ignore cleanup errors */ }
 
@@ -249,7 +252,7 @@ export async function runAutopilotTickForConfig(
           await fs.promises.unlink(renderOutputPath).catch(() => {});
         }
         for (let i = 0; i < design.pages.length; i++) {
-          await fs.promises.unlink(`/tmp/autopilot-slide-${jobId}-${i}.png`).catch(() => {});
+          await fs.promises.unlink(path.join(os.tmpdir(), `autopilot-slide-${jobId}-${i}.png`)).catch(() => {});
         }
         await sql`
           UPDATE autopilot_jobs SET
