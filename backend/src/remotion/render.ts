@@ -58,6 +58,12 @@ export async function renderVideoWithRemotion(
   if (pages.length === 0) {
     throw new Error("No pages to render");
   }
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 ||
+      !Number.isFinite(fps) || fps < 1 || fps > 120 ||
+      pages.some((page) => !Number.isFinite(page.durationMs) || page.durationMs <= 0)) {
+    throw new Error("Invalid Remotion dimensions, frame rate, or slide duration");
+  }
+
 
   const bundleLocation = await getBundle();
 
