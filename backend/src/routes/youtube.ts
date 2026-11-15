@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { google } from "googleapis";
 import { requireAuth } from "../middleware/auth";
 import sql from "../db";
+import { readOwnedVideo } from "../services/ownedMedia";
 
 const router = Router();
 
@@ -66,34 +67,6 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  // Validate URL to prevent SSRF
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(videoUrl);
-  } catch {
-    res.status(400).json({ error: "Invalid video URL" });
-    return;
-  }
-
-  const allowedProtocols = ["http:", "https:"];
-  const allowedHosts = ["localhost", "127.0.0.1", "blob:", "lh3.googleusercontent.com"];
-  
-  if (!allowedProtocols.includes(parsedUrl.protocol)) {
-    res.status(400).json({ error: "Only HTTP/HTTPS URLs are allowed" });
-    return;
-  }
-
-  // Block internal/private IPs
-  const hostname = parsedUrl.hostname;
-  const isPrivateIP = /^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|127\.|0\.|localhost)/.test(hostname) ||
-    hostname.endsWith(".local") ||
-    hostname.endsWith(".internal");
-  
-  if (isPrivateIP && !allowedHosts.includes(hostname)) {
-    res.status(400).json({ error: "Private/internal URLs are not allowed" });
-    return;
-  }
-
   const client = await getRefreshedClient(userId);
   if (!client) {
     res.status(400).json({ error: "No YouTube channel connected. Please connect via /api/auth/google first." });
@@ -101,10 +74,7 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const videoResponse = await fetch(videoUrl);
-    if (!videoResponse.ok) throw new Error("Failed to download video from provided URL");
-    const videoBlob = await videoResponse.blob();
-    const buffer = Buffer.from(await videoBlob.arrayBuffer());
+    const { buffer, mimeType } = await readOwnedVideo(userId, videoUrl);
 
     const youtube = google.youtube({ version: "v3", auth: client.oauth2Client });
 
@@ -124,7 +94,7 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
         },
       },
       media: {
-        mimeType: videoResponse.headers.get("content-type") || "video/webm",
+        mimeType,
         body: new (require("stream").Readable)({ read() { this.push(buffer); this.push(null); } }),
       },
     });
