@@ -5,13 +5,13 @@ import sql from "../db";
 /** Resolve only locally uploaded media belonging to the authenticated user. */
 export async function readOwnedVideo(userId: string, urlOrFilename: string): Promise<{ buffer: Buffer; mimeType: string }> {
   let filename: string;
-  if (/^[A-Za-z0-9_-]+\\.(webm|mp4|mov|avi)$/i.test(urlOrFilename)) {
+  if (/^[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(urlOrFilename)) {
     filename = urlOrFilename;
   } else {
     let parsed: URL;
     try { parsed = new URL(urlOrFilename); } catch { throw new Error("Invalid media reference"); }
     if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash ||
-        !/^\\/uploads\\/[A-Za-z0-9_-]+\\.(webm|mp4|mov|avi)$/i.test(parsed.pathname)) {
+        !/^\/uploads\/[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(parsed.pathname)) {
       throw new Error("Only uploaded media references are accepted");
     }
     filename = parsed.pathname.slice("/uploads/".length);
