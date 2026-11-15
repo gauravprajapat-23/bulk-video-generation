@@ -5,6 +5,22 @@ import { processAutopilotConfigs } from "./autopilotPipeline";
 
 const BATCH_SIZE = 5;
 
+/**
+ * A crashed worker might have uploaded a video before its database status was
+ * recorded. Never silently requeue these jobs; require manual reconciliation.
+ */
+export async function quarantineStaleSchedules(): Promise<number> {
+  const stale = await sql`
+    UPDATE upload_schedules
+    SET status = 'needs_review', updated_at = now()
+    WHERE status = 'processing'
+      AND processing_started_at < now() - interval '30 minutes'
+    RETURNING id
+  `;
+  if (stale.length) console.warn(`[scheduler] ${stale.length} stale job(s) need manual review`);
+  return stale.length;
+}
+
 /** Process schedules that are due (pending + scheduled_at <= now). */
 async function processDueSchedules(): Promise<void> {
   if (!isDbAvailable()) return;
@@ -38,7 +54,6 @@ async function processAutomationRules(): Promise<void> {
   if (!isDbAvailable()) return;
   try {
     const now = new Date();
-    const currentTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
 
     const enabledRules = await sql`
@@ -54,14 +69,13 @@ async function processAutomationRules(): Promise<void> {
         if (dailyTimes.length === 0) continue;
 
         // Check if current time matches any of the daily times (within 1-minute window)
-        const matchesTime = dailyTimes.some((t) => {
+        const matchedTime = dailyTimes.find((t) => {
           const [h, m] = t.split(":").map(Number);
           const ruleMinutes = h * 60 + m;
           const nowMinutes = now.getHours() * 60 + now.getMinutes();
           return Math.abs(ruleMinutes - nowMinutes) <= 1;
         });
-
-        if (!matchesTime) continue;
+        if (!matchedTime) continue;
 
         // Count how many uploads this rule has already triggered today
         const todayUploads = await sql`
@@ -77,18 +91,39 @@ async function processAutomationRules(): Promise<void> {
           continue;
         }
 
-        // Find the next pending schedule for this user that isn't already assigned to a rule
-        const nextSchedule = await sql`
-          SELECT id FROM upload_schedules
-          WHERE user_id = ${rule.user_id}
+        // One rule/slot can only be claimed once across all scheduler instances.
+        // Claiming a slot is atomic; do not execute a second upload for the same slot.
+        const slot = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}T${matchedTime}`;
+        const ruleClaim = await sql`
+          UPDATE automation_rules SET last_claimed_slot = ${slot}, updated_at = now()
+          WHERE id = ${rule.id} AND is_enabled = true AND status = 'active'
+            AND last_claimed_slot IS DISTINCT FROM ${slot}
+          RETURNING id
+        `;
+        if (!ruleClaim.length) continue;
+
+        // Claim the next unassigned schedule in one statement.
+        const claimedSchedule = await sql`
+          UPDATE upload_schedules SET
+            automation_rule_id = ${rule.id},
+            scheduled_at = now(),
+            updated_at = now()
+          WHERE id = (
+            SELECT id FROM upload_schedules
+            WHERE user_id = ${rule.user_id}
+              AND status = 'pending'
+              AND automation_rule_id IS NULL
+            ORDER BY scheduled_at ASC
+            LIMIT 1
+          )
+            AND user_id = ${rule.user_id}
             AND status = 'pending'
             AND automation_rule_id IS NULL
-          ORDER BY scheduled_at ASC
-          LIMIT 1
+          RETURNING id
         `;
-
-        if (nextSchedule.length === 0) {
-          console.log(`[scheduler] rule ${rule.name}: no pending schedules for user ${rule.user_id}`);
+        if (!claimedSchedule.length) continue;
+        const scheduleId = claimedSchedule[0].id;
+        console.log(`[scheduler] rule ${rule.name}: no pending schedules for user ${rule.user_id}`);
           continue;
         }
 
@@ -115,6 +150,8 @@ async function processAutomationRules(): Promise<void> {
 
 export function startScheduler(): void {
   cron.schedule("* * * * *", async () => {
+    if (!isDbAvailable()) return;
+    await quarantineStaleSchedules();
     await processDueSchedules();
     await processAutomationRules();
     await processAutopilotConfigs();
