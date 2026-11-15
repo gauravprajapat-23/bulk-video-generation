@@ -2,21 +2,9 @@ import { Router, Request, Response } from "express";
 import { google } from "googleapis";
 import crypto from "crypto";
 import sql from "../db";
-import { signToken } from "../middleware/auth";
+import { requireAuth, signToken } from "../middleware/auth";
 
 const router = Router();
-
-const OAUTH_STATE_SECRET = process.env.OAUTH_STATE_SECRET || process.env.JWT_SECRET;
-if (!OAUTH_STATE_SECRET) {
-  throw new Error("OAUTH_STATE_SECRET or JWT_SECRET environment variable is required");
-}
-
-const oauth2Client = new google.auth.OAuth2(
-  process.env.GOOGLE_CLIENT_ID,
-  process.env.GOOGLE_CLIENT_SECRET,
-  process.env.GOOGLE_REDIRECT_URI
-);
-
 const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
   "https://www.googleapis.com/auth/youtube.readonly",
@@ -24,107 +12,93 @@ const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/userinfo.profile",
 ];
 
-function signState(data: string): string {
-  const signature = crypto.createHmac("sha256", OAUTH_STATE_SECRET!).update(data).digest("base64url");
-  return `${Buffer.from(data).toString("base64url")}.${signature}`;
+function newGoogleClient() {
+  return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
+}
+function callbackRedirect(path: string): string {
+  return new URL(path, process.env.FRONTEND_URL || "http://localhost:3000").toString();
 }
 
-function verifyState(signedState: string): { userId: string; email: string } | null {
-  try {
-    const [encodedData, signature] = signedState.split(".");
-    if (!encodedData || !signature) return null;
-    const data = Buffer.from(encodedData, "base64url").toString();
-    const expected = crypto.createHmac("sha256", OAUTH_STATE_SECRET!).update(data).digest("base64url");
-    if (signature !== expected) return null;
-    return JSON.parse(data);
-  } catch {
-    return null;
-  }
-}
+// Do not accept arbitrary user identifiers in redirect OAuth initiation.
+router.get("/google", (_req: Request, res: Response) => {
+  res.status(410).json({ error: "Use authenticated /api/auth/google/start instead." });
+});
 
-router.get("/google", (req: Request, res: Response) => {
-  const { userId, email } = req.query as { userId?: string; email?: string };
-  if (!userId || !email) {
-    res.status(400).json({ error: "userId and email query params are required" });
+router.post("/google/start", requireAuth, async (req: Request, res: Response) => {
+  const { userId } = (req as any).auth;
+  if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REDIRECT_URI) {
+    res.status(503).json({ error: "Server OAuth is not configured" });
     return;
   }
-  const statePayload = JSON.stringify({ userId, email });
-  const state = signState(statePayload);
-  const url = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    prompt: "consent",
-    scope: YOUTUBE_SCOPES,
-    state,
-  });
-  res.redirect(url);
+  try {
+    const nonce = crypto.randomBytes(32).toString("base64url");
+    const hash = crypto.createHash("sha256").update(nonce).digest("hex");
+    await sql`INSERT INTO youtube_oauth_states (state_hash, user_id, expires_at)
+      VALUES (${hash}, ${userId}, now() + interval '10 minutes')`;
+    const authUrl = newGoogleClient().generateAuthUrl({ access_type: "offline", prompt: "consent", scope: YOUTUBE_SCOPES, state: nonce });
+    res.json({ authUrl });
+  } catch (err) {
+    console.error("[auth] OAuth start failed:", err);
+    res.status(500).json({ error: "Unable to start channel connection" });
+  }
 });
 
 router.get("/google/callback", async (req: Request, res: Response) => {
-  const { code, state } = req.query as { code?: string; state?: string };
-  const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
-
-  if (!code || !state) {
-    res.redirect(`${frontendUrl}/youtube?error=missing_code`);
+  const code = typeof req.query.code === "string" ? req.query.code : "";
+  const nonce = typeof req.query.state === "string" ? req.query.state : "";
+  if (!code || !/^[A-Za-z0-9_-]{40,80}$/.test(nonce)) {
+    res.redirect(callbackRedirect("/youtube?error=invalid_state"));
     return;
   }
-
   try {
-    const stateData = verifyState(state);
-    if (!stateData) {
-      res.redirect(`${frontendUrl}/youtube?error=invalid_state`);
+    const hash = crypto.createHash("sha256").update(nonce).digest("hex");
+    const state = await sql`DELETE FROM youtube_oauth_states
+      WHERE state_hash = ${hash} AND expires_at > now()
+      RETURNING user_id`;
+    if (state.length !== 1) {
+      res.redirect(callbackRedirect("/youtube?error=expired_state"));
       return;
     }
-    const { userId, email } = stateData;
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-
-    const youtube = google.youtube({ version: "v3", auth: oauth2Client });
-    const channelRes = await youtube.channels.list({
-      part: ["snippet"],
-      mine: true,
-    });
-    const channel = channelRes.data.items?.[0];
-    if (!channel) {
-      res.redirect(`${frontendUrl}/youtube?error=no_channel`);
+    const userId = state[0].user_id as string;
+    const oauth = newGoogleClient();
+    const { tokens } = await oauth.getToken(code);
+    oauth.setCredentials(tokens);
+    const youtube = google.youtube({ version: "v3", auth: oauth });
+    const channels = await youtube.channels.list({ part: ["snippet"], mine: true });
+    const channel = channels.data.items?.[0];
+    if (!channel?.id) {
+      res.redirect(callbackRedirect("/youtube?error=no_channel"));
       return;
     }
-
-    const channelId = channel.id!;
-    const channelTitle = channel.snippet?.title || "YouTube Channel";
-    const channelThumbnail =
-      channel.snippet?.thumbnails?.default?.url ||
-      channel.snippet?.thumbnails?.medium?.url ||
-      channel.snippet?.thumbnails?.high?.url ||
-      null;
-
-    await sql`
-      INSERT INTO users (id, email, name, avatar_url, updated_at)
-      VALUES (${userId}, ${email}, ${channelTitle}, ${channelThumbnail}, now())
-      ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        avatar_url = EXCLUDED.avatar_url,
-        updated_at = now()
-    `;
-
+    // Unattended uploads require a refresh token, not just a short-lived access token.
+    if (!tokens.refresh_token) {
+      const existing = await sql`SELECT id FROM user_youtube_tokens
+        WHERE user_id = ${userId} AND channel_id = ${channel.id} AND refresh_token IS NOT NULL LIMIT 1`;
+      if (!existing.length) {
+        res.redirect(callbackRedirect("/youtube?error=refresh_token_required"));
+        return;
+      }
+    }
+    const thumbnail = channel.snippet?.thumbnails?.default?.url || channel.snippet?.thumbnails?.medium?.url || null;
     await sql`
       INSERT INTO user_youtube_tokens
         (user_id, channel_id, channel_title, channel_thumbnail_url, access_token, refresh_token, token_expiry, scopes, connected_at)
       VALUES
-        (${userId}, ${channelId}, ${channelTitle}, ${channelThumbnail}, ${tokens.access_token || null}, ${tokens.refresh_token || null}, ${tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null}, ${YOUTUBE_SCOPES}, now())
+        (${userId}, ${channel.id}, ${channel.snippet?.title || "YouTube Channel"}, ${thumbnail}, ${tokens.access_token || null},
+         ${tokens.refresh_token || null}, ${tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null}, ${YOUTUBE_SCOPES}, now())
       ON CONFLICT (user_id, channel_id) DO UPDATE SET
         channel_title = EXCLUDED.channel_title,
         channel_thumbnail_url = EXCLUDED.channel_thumbnail_url,
         access_token = EXCLUDED.access_token,
         refresh_token = COALESCE(EXCLUDED.refresh_token, user_youtube_tokens.refresh_token),
         token_expiry = EXCLUDED.token_expiry,
+        scopes = EXCLUDED.scopes,
         connected_at = now()
     `;
-
-    const appToken = signToken({ userId, email });
-    res.redirect(`${frontendUrl}/youtube?token=${appToken}&channelId=${channelId}`);
+    res.redirect(callbackRedirect("/youtube?connected=server"));
   } catch (err) {
-    console.error("[auth] Google OAuth callback error:", err);
-    res.redirect(`${frontendUrl}/youtube?error=oauth_failed`);
+    console.error("[auth] OAuth callback error:", err);
+    res.redirect(callbackRedirect("/youtube?error=oauth_failed"));
   }
 });
 

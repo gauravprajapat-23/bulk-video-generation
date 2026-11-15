@@ -5,9 +5,10 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
-import { ensureTables } from "./db";
+import { ensureTables, isDbAvailable } from "./db";
 import { startScheduler } from "./services/scheduler";
-import { requireAuth, verifyToken } from "./middleware/auth";
+import { requireAuth } from "./middleware/auth";
+import sql from "./db";
 import authRoutes from "./routes/auth";
 import youtubeRoutes from "./routes/youtube";
 import scheduleRoutes from "./routes/schedules";
@@ -39,23 +40,39 @@ app.use(cors({
 }));
 app.use(express.json({ limit: "10mb" }));
 
-// Protected static file serving for uploads — requires valid JWT
-app.use("/uploads", (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    res.status(401).json({ error: "Authentication required to access uploads" });
+// Protected media delivery: authenticate AND check ownership before sending bytes.
+app.get("/uploads/:filename", requireAuth, async (req, res) => {
+  const filename = req.params.filename;
+  if (!/^[a-zA-Z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(filename)) {
+    res.status(404).json({ error: "Media not found" });
     return;
   }
-  const payload = verifyToken(authHeader.slice(7));
-  if (!payload) {
-    res.status(401).json({ error: "Invalid or expired token" });
-    return;
+  const { userId } = (req as any).auth;
+  try {
+    const owned = await sql`
+      SELECT filename FROM uploaded_media WHERE filename = ${filename} AND user_id = ${userId}
+    `;
+    if (!owned.length) {
+      res.status(404).json({ error: "Media not found" });
+      return;
+    }
+    res.sendFile(filename, { root: path.join(__dirname, "../uploads"), dotfiles: "deny" });
+  } catch (err) {
+    console.error("[media] authorization failed:", err);
+    res.status(500).json({ error: "Media access unavailable" });
   }
-  next();
-}, express.static(path.join(__dirname, "../uploads")));
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/health/ready", (_req, res) => {
+  if (!isDbAvailable()) {
+    res.status(503).json({ status: "unavailable", reason: "database not ready" });
+    return;
+  }
+  res.json({ status: "ready" });
 });
 
 app.use("/api/auth", authRoutes);

@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import sql from "../db";
 import { Readable } from "stream";
+import { readOwnedVideo } from "./ownedMedia";
 
 interface UploadResult {
   youtubeVideoId: string;
@@ -127,19 +128,8 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
       throw new Error("No video file URL attached to this schedule. Upload the video from the frontend first.");
     }
 
-    let buffer: Buffer;
-    let mimeType: string;
-
-    if (schedule.video_blob_url.startsWith("http")) {
-      const videoResponse = await fetch(schedule.video_blob_url);
-      if (!videoResponse.ok) throw new Error(`Failed to download video: ${videoResponse.status}`);
-      buffer = Buffer.from(await videoResponse.arrayBuffer());
-      mimeType = videoResponse.headers.get("content-type") || "video/webm";
-    } else {
-      const fs = await import("fs");
-      buffer = fs.readFileSync(schedule.video_blob_url);
-      mimeType = "video/webm";
-    }
+    // Never fetch arbitrary URLs or local paths from persisted schedules.
+    const { buffer, mimeType } = await readOwnedVideo(schedule.user_id, schedule.video_blob_url);
 
     console.log(`[scheduler] video downloaded, size: ${buffer.length} bytes`);
 

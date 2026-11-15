@@ -104,6 +104,28 @@ export async function ensureTables() {
       )
     `;
 
+    await sql`
+      CREATE TABLE IF NOT EXISTS uploaded_media (
+        filename TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        project_id TEXT,
+        size_bytes BIGINT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_uploaded_media_user ON uploaded_media(user_id)`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS youtube_oauth_states (
+        state_hash TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_youtube_oauth_expiry ON youtube_oauth_states(expires_at)`;
+
+
     await sql`CREATE INDEX IF NOT EXISTS idx_schedules_pending ON upload_schedules(scheduled_at) WHERE status = 'pending'`;
     await sql`CREATE INDEX IF NOT EXISTS idx_schedules_user ON upload_schedules(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_uploads_user ON youtube_uploads(user_id)`;

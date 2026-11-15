@@ -28,7 +28,9 @@ import {
 import {
   autoLoginWithGoogle,
   getBackendToken,
-  setBackendToken,
+  beginBackendYoutubeOAuth,
+  listYouTubeChannels,
+  disconnectServerYoutubeChannel,
 } from "@/lib/backendClient";
 
 type ConnectMode = "consent" | "select_account" | "silent";
@@ -52,27 +54,19 @@ function YouTubeConnectionContent() {
 
   const [connectingMode, setConnectingMode] = useState<ConnectMode | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [serverConnecting, setServerConnecting] = useState(false);
+  const [serverChannels, setServerChannels] = useState<Array<{ channel_id: string; channel_title: string }>>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
-    const channelId = searchParams.get("channelId");
     const error = searchParams.get("error");
-
-    if (token) {
-      setBackendToken(token);
-      const stored = localStorage.getItem("video-maker-store");
-      let userId = "anonymous";
-      let email = "user@local.app";
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          userId = parsed.state?.youtube?.channelId || userId;
-          email = `${userId}@local.app`;
-        } catch {}
-      }
-      setBackendAuth({ connected: true, token, userId, email });
-      show("Backend connected with YouTube channel.", "success");
+    if (searchParams.get("connected") === "server") {
+      show("Server-side YouTube connection authorized. Scheduled uploads can now use a refresh token.", "success");
+      window.history.replaceState({}, "", "/youtube");
+    }
+    if (searchParams.has("token")) {
+      // Never consume bearer tokens delivered in a URL.
+      show("Legacy OAuth links are no longer supported. Reconnect your YouTube channel.", "error");
       window.history.replaceState({}, "", "/youtube");
     }
     if (error) {
@@ -80,6 +74,13 @@ function YouTubeConnectionContent() {
       window.history.replaceState({}, "", "/youtube");
     }
   }, [searchParams, setBackendAuth, show]);
+
+  useEffect(() => {
+    if (!getBackendToken()) return;
+    listYouTubeChannels().then((channels) => {
+      if (Array.isArray(channels)) setServerChannels(channels);
+    }).catch(() => {});
+  }, [searchParams]);
 
   if (!hasHydrated) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -104,6 +105,32 @@ function YouTubeConnectionContent() {
       show(err instanceof Error ? err.message : "Couldn't connect YouTube.", "error");
     } finally {
       setConnectingMode(null);
+    }
+  }
+
+  async function connectServerChannel() {
+    setServerConnecting(true);
+    try {
+      if (!getBackendToken()) {
+        const googleToken = await requestYouTubeAccessToken("consent");
+        const auth = await autoLoginWithGoogle(googleToken);
+        setBackendAuth({ connected: true, token: auth.token, userId: auth.userId, email: auth.email });
+      }
+      const authUrl = await beginBackendYoutubeOAuth();
+      window.location.assign(authUrl);
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Server channel connection failed", "error");
+      setServerConnecting(false);
+    }
+  }
+
+  async function disconnectServerChannel(channelId: string) {
+    try {
+      await disconnectServerYoutubeChannel(channelId);
+      setServerChannels((prev) => prev.filter((channel) => channel.channel_id !== channelId));
+      show("Server connection removed. Future scheduled uploads using this connection will fail until reauthorized.", "success");
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Unable to disconnect server channel", "error");
     }
   }
 
@@ -226,6 +253,26 @@ function YouTubeConnectionContent() {
               )}
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Server-side YouTube scheduling</CardTitle>
+        <CardSubtitle>Connect separately to authorize unattended scheduled uploads. This stores a Google refresh token on the server, associated with your signed-in account.</CardSubtitle>
+        {serverChannels.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {serverChannels.map((channel) => (
+              <div key={channel.channel_id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2">
+                <span className="truncate text-xs text-text">{channel.channel_title || channel.channel_id}</span>
+                <Button size="sm" variant="danger" onClick={() => disconnectServerChannel(channel.channel_id)}>Disconnect server</Button>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-3">
+          <Button variant="secondary" onClick={connectServerChannel} loading={serverConnecting}>
+            <Youtube size={16} /> Authorize server scheduling
+          </Button>
         </div>
       </Card>
 

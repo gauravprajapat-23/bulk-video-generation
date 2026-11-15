@@ -85,8 +85,14 @@ export function clearBackendToken() {
   localStorage.removeItem(TOKEN_EXPIRY_KEY);
 }
 
-export function getYouTubeConnectUrl(userId: string, email: string): string {
-  return `${API_BASE}/auth/google?userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}`;
+/** Begins an authenticated, single-use Google OAuth flow for unattended publishing. */
+export async function beginBackendYoutubeOAuth(): Promise<string> {
+  const result = await apiFetch<{ authUrl: string }>("/auth/google/start", { method: "POST" });
+  const url = new URL(result.authUrl);
+  if (url.protocol !== "https:" || url.hostname !== "accounts.google.com") {
+    throw new Error("Unexpected Google authorization URL");
+  }
+  return url.toString();
 }
 
 export async function listSchedules() {
@@ -149,6 +155,10 @@ export async function listYouTubeChannels() {
   return apiFetch("/youtube/channels");
 }
 
+export async function disconnectServerYoutubeChannel(channelId: string): Promise<void> {
+  await apiFetch(`/youtube/channels/${encodeURIComponent(channelId)}`, { method: "DELETE" });
+}
+
 export async function serverUpload(params: {
   projectId?: string;
   title: string;
@@ -208,7 +218,8 @@ export async function getAutopilotJob(jobId: string) {
 
 export async function uploadVideoToBackend(blob: Blob, projectId: string): Promise<{ videoUrl: string; filename: string; sizeBytes: number }> {
   if (!API_BASE) throw new Error("NEXT_PUBLIC_API_BASE_URL is not set");
-  const token = localStorage.getItem("backend_token");
+  const token = getBackendToken();
+  if (!token) throw new Error("Sign in before uploading a video");
   const form = new FormData();
   form.append("video", blob, `${projectId}.webm`);
   form.append("projectId", projectId);
@@ -222,4 +233,19 @@ export async function uploadVideoToBackend(blob: Blob, projectId: string): Promi
     throw new Error(body.error || `Upload error ${res.status}`);
   }
   return res.json();
+}
+
+/** Fetch protected backend media without placing access tokens in URLs. */
+export async function fetchOwnedVideoBlob(mediaUrl: string, signal?: AbortSignal): Promise<Blob> {
+  if (!API_BASE) throw new Error("NEXT_PUBLIC_API_BASE_URL is not set");
+  const token = getBackendToken();
+  if (!token) throw new Error("Sign in to preview server media");
+  const apiOrigin = new URL(API_BASE, window.location.origin).origin;
+  const url = new URL(mediaUrl, apiOrigin);
+  if (url.origin !== apiOrigin || !/^\/uploads\/[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(url.pathname) || url.search || url.hash) {
+    throw new Error("Invalid protected media URL");
+  }
+  const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, signal });
+  if (!response.ok) throw new Error(response.status === 404 ? "Video unavailable or access denied" : `Media request failed (${response.status})`);
+  return response.blob();
 }

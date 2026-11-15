@@ -28,6 +28,7 @@ import {
   Eye,
 } from "lucide-react";
 import { VideoPreviewModal } from "@/components/scheduler/VideoPreviewModal";
+import { ServerVideoPreview } from "@/components/scheduler/ServerVideoPreview";
 import { BulkSeoTable } from "@/components/scheduler/BulkSeoTable";
 import { ScheduleCard } from "@/components/scheduler/ScheduleCard";
 import { UploadHistoryCard } from "@/components/scheduler/UploadHistoryCard";
@@ -85,6 +86,7 @@ import {
 
 function UploadSchedulerContent() {
   const hasHydrated = useHasHydrated();
+  const [serverPreviewUrl, setServerPreviewUrl] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const { show } = useToast();
 
@@ -533,18 +535,11 @@ function UploadSchedulerContent() {
           madeForKids: row.madeForKids,
         };
 
-        let videoBlobUrl: string | null = null;
-        if (project.outputBlobKey) {
-          try {
-            const blob = await getBlob(project.outputBlobKey);
-            if (blob) {
-              const result = await uploadVideoToBackend(blob, project.id);
-              videoBlobUrl = result.videoUrl;
-            }
-          } catch {
-            // video upload failed — continue anyway
-          }
-        }
+        if (!project.outputBlobKey) throw new Error("Render the video before scheduling");
+        const blob = await getBlob(project.outputBlobKey);
+        if (!blob) throw new Error("Rendered video is missing from browser storage");
+        const uploaded = await uploadVideoToBackend(blob, project.id);
+        const videoBlobUrl = uploaded.videoUrl;
 
         await createServerSchedule({
           projectId: project.id,
@@ -822,6 +817,11 @@ function UploadSchedulerContent() {
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" ? "warn" : "accent"}>{s.status}</Badge>
+                  {typeof s.video_blob_url === "string" && s.video_blob_url.length > 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => setServerPreviewUrl(s.video_blob_url)}>
+                      <Eye size={12} /> Preview
+                    </Button>
+                  )}
                   {(s.status === "pending" || s.status === "paused") && (
                     <>
                       <Button
@@ -959,6 +959,8 @@ function UploadSchedulerContent() {
           <p className="text-xs text-muted">No automation rules yet.</p>
         )}
       </Card>
+
+      {serverPreviewUrl && <ServerVideoPreview mediaUrl={serverPreviewUrl} onClose={() => setServerPreviewUrl(null)} />}
 
       <VideoPreviewModal
         open={!!previewProject}
