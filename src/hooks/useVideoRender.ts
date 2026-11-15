@@ -78,10 +78,9 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
   // Derive batch totals after React commits each project status. Keeping this
   // outside a setState updater avoids state updates during React render.
   useEffect(() => {
-    if (!generating) return;
     const total = Object.keys(genStatuses).length;
     if (total) updateProgress(genStatuses, total);
-  }, [genStatuses, generating, updateProgress]);
+  }, [genStatuses, updateProgress]);
 
   const renderSingleProject = useCallback(
     async (project: VideoProject): Promise<"completed" | "failed" | "cancelled"> => {
@@ -194,7 +193,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
       setGenerating(false);
       options?.onComplete?.({ completedCount, failedCount, total: targets.length });
     },
-    [renderSingleProject, updateProgress, options],
+    [renderSingleProject, options],
   );
 
   const retryProject = useCallback(
@@ -209,7 +208,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
 
 
     },
-    [renderSingleProject, updateProgress],
+    [renderSingleProject],
   );
 
   const cancelRender = useCallback(
