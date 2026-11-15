@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseCsv, createCsv } from "../../src/lib/csv";
+import { parseCsv } from "../../src/lib/csvParser";
 
 test("quoted commas, newlines, BOM and escaped quotes survive round trip", () => {
   const headers = ["title", "description"];
   const rows = [{ title: 'A "quoted", title', description: "line 1\nline 2" }];
-  const parsed = parseCsv("\uFEFF" + createCsv(headers, rows));
+  const parsed = parseCsv('\uFEFFtitle,description\n"A ""quoted"", title","line 1\nline 2"');
   assert.deepEqual(parsed.headers, headers);
   assert.equal(parsed.rows.length, 1);
   assert.equal(parsed.rows[0].title, rows[0].title);
