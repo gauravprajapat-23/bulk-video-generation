@@ -957,15 +957,18 @@ export interface RenderResult {
 /** Renders the project to a real, playable video file entirely in the browser. */
 export async function renderVideoLocally(
   inputs: RenderInputs,
-  onProgress: (percent: number) => void
+  onProgress: (percent: number) => void,
+  signal?: AbortSignal
 ): Promise<RenderResult> {
   const { project, imageAssets, watermarkAsset, audioAsset } = inputs;
+  if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
   if (!project.images.length) {
     throw new Error("This project has no images to render.");
   }
 
   const timeline = getSlideTimeline(project);
   const bitmapById = await loadImageBitmaps(imageAssets);
+  if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
   const watermarkBitmap = watermarkAsset
     ? (await loadImageBitmaps([watermarkAsset])).get(watermarkAsset.id) ?? null
     : null;
@@ -979,6 +982,11 @@ export async function renderVideoLocally(
   let audioGraph: AudioGraph | null = null;
   if (audioAsset && project.audioAssignment) {
     audioGraph = await buildAudioGraph(audioAsset, project.audioAssignment, timeline.totalDurationMs);
+  }
+
+  if (signal?.aborted) {
+    await audioGraph?.audioCtx.close().catch(() => {});
+    throw new DOMException("Render cancelled", "AbortError");
   }
 
   const videoStream = (canvas as HTMLCanvasElement & { captureStream(fps?: number): MediaStream }).captureStream(30);
@@ -999,97 +1007,100 @@ export async function renderVideoLocally(
 
   return new Promise<RenderResult>((resolve, reject) => {
     let settled = false;
-    recorder.onerror = (e) => {
+    let stopped = false;
+    let watchdog: ReturnType<typeof setInterval> | undefined;
+    let frameId: number | undefined;
+    const startTime = performance.now();
+
+    function cleanup() {
+      if (watchdog !== undefined) clearInterval(watchdog);
+      if (frameId !== undefined) cancelAnimationFrame(frameId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      signal?.removeEventListener("abort", onAbort);
+      try { audioGraph?.source.stop(); } catch { /* may not have started */ }
+      void audioGraph?.audioCtx.close().catch(() => {});
+      for (const track of combinedStream.getTracks()) track.stop();
+    }
+
+    function fail(error: Error) {
       if (settled) return;
       settled = true;
-      const errMsg = (e as any).error?.message ?? "unknown error";
-      reject(new Error("Recording failed: " + errMsg));
+      stopped = true;
+      cleanup();
+      if (recorder.state !== "inactive") {
+        try { recorder.stop(); } catch { /* recorder already stopped */ }
+      }
+      reject(error);
+    }
+
+    function finish() {
+      if (stopped || settled) return;
+      stopped = true;
+      if (watchdog !== undefined) clearInterval(watchdog);
+      if (frameId !== undefined) cancelAnimationFrame(frameId);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      try { audioGraph?.source.stop(); } catch { /* may not have started */ }
+      if (recorder.state !== "inactive") {
+        try { recorder.stop(); } catch (err) {
+          fail(err instanceof Error ? err : new Error("Unable to finalize recording"));
+        }
+      } else {
+        fail(new Error("Recorder ended before a valid video was produced"));
+      }
+    }
+
+    function onAbort() {
+      fail(new DOMException("Render cancelled", "AbortError"));
+    }
+
+    function onVisibilityChange() {
+      if (!document.hidden && performance.now() - startTime >= timeline.totalDurationMs) finish();
+    }
+
+    recorder.onerror = (event) => {
+      const error = (event as Event & { error?: Error }).error;
+      fail(new Error("Recording failed: " + (error?.message || "unknown error")));
     };
     recorder.onstop = () => {
       if (settled) return;
       settled = true;
-      audioGraph?.audioCtx.close().catch(() => {});
+      cleanup();
       const blob = new Blob(chunks, { type: mimeType });
+      if (blob.size === 0) {
+        reject(new Error("Recording produced an empty video file"));
+        return;
+      }
       onProgress(100);
       resolve({ blob, durationMs: timeline.totalDurationMs, mimeType });
     };
 
-    const startTime = performance.now();
-    let stopped = false;
-
-    // Watchdog: if requestAnimationFrame stalls (e.g. tab backgrounded),
-    // use setInterval as a fallback to detect completion.
-    const watchdog = setInterval(() => {
-      if (stopped || settled) {
-        clearInterval(watchdog);
-        return;
-      }
-      const elapsed = performance.now() - startTime;
-      if (elapsed >= timeline.totalDurationMs) {
-        stopped = true;
-        clearInterval(watchdog);
-        try {
-          audioGraph?.source.stop();
-        } catch { /* already stopped */ }
-        try {
-          recorder.stop();
-        } catch { /* already stopped */ }
-      }
-    }, 1000);
-
-    // Also listen for visibilitychange to detect tab backgrounding
-    function onVisibilityChange() {
-      if (document.hidden || settled) return;
-      // When tab comes back, check if render should have finished
-      const elapsed = performance.now() - startTime;
-      if (elapsed >= timeline.totalDurationMs && !stopped) {
-        stopped = true;
-        clearInterval(watchdog);
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        try {
-          audioGraph?.source.stop();
-        } catch { /* already stopped */ }
-        try {
-          recorder.stop();
-        } catch { /* already stopped */ }
-      }
-    }
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
     document.addEventListener("visibilitychange", onVisibilityChange);
+    watchdog = setInterval(() => {
+      if (performance.now() - startTime >= timeline.totalDurationMs) finish();
+    }, 500);
 
     function frame() {
-      if (stopped) return;
-      const elapsed = performance.now() - startTime;
-      drawProjectFrame(ctx!, canvas.width, canvas.height, elapsed, timeline, bitmapById, project, watermarkBitmap);
-      onProgress(Math.min(99, (elapsed / timeline.totalDurationMs) * 100));
-      if (elapsed >= timeline.totalDurationMs) {
-        stopped = true;
-        clearInterval(watchdog);
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-        try {
-          audioGraph?.source.stop();
-        } catch {
-          /* already stopped */
-        }
-        recorder.stop();
-        return;
+      if (stopped || settled) return;
+      try {
+        const elapsed = performance.now() - startTime;
+        drawProjectFrame(ctx!, canvas.width, canvas.height, Math.min(elapsed, timeline.totalDurationMs),
+          timeline, bitmapById, project, watermarkBitmap);
+        onProgress(Math.min(99, (elapsed / timeline.totalDurationMs) * 100));
+        if (elapsed >= timeline.totalDurationMs) finish();
+        else frameId = requestAnimationFrame(frame);
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error(String(err)));
       }
-      requestAnimationFrame(frame);
     }
 
     try {
       recorder.start();
-      // Start audio separately — if it fails, the frame loop still runs
-      try {
-        audioGraph?.source.start(0, audioGraph.trimStartSec);
-      } catch {
-        // Audio failed to start — continue without audio
-      }
-      requestAnimationFrame(frame);
+      if (audioGraph) audioGraph.source.start(0, audioGraph.trimStartSec);
+      frameId = requestAnimationFrame(frame);
     } catch (err) {
-      settled = true;
-      clearInterval(watchdog);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-      reject(err instanceof Error ? err : new Error(String(err)));
+      fail(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }
