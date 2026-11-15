@@ -8,6 +8,7 @@ import os from "os";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { SlideData } from "./SlideVideo";
+import { expectedFrameCount } from "./frameTiming";
 
 export type { SlideData } from "./SlideVideo";
 import type { AnimationPreset } from "../types";
@@ -69,7 +70,7 @@ export async function renderVideoWithRemotion(
 
   // Calculate total duration
   const totalDurationMs = pages.reduce((sum, p) => sum + p.durationMs, 0);
-  const durationInFrames = Math.ceil((totalDurationMs / 1000) * fps);
+  const durationInFrames = expectedFrameCount(pages.map((p) => p.durationMs), fps);
 
   console.log(`[remotion] rendering ${pages.length} slides, ${totalDurationMs}ms total, ${durationInFrames} frames`);
 
