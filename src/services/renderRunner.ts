@@ -2,7 +2,7 @@
 
 import type { AudioAsset, ImageAsset, VideoProject } from "@/lib/types";
 import { renderVideoLocally } from "@/services/videoRenderService";
-import { putBlob } from "@/lib/idbStore";
+import { putBlob, deleteBlob } from "@/lib/idbStore";
 import { newId } from "@/lib/id";
 
 interface RunRenderParams {
@@ -60,6 +60,10 @@ export async function runProjectRender({
   if (result.blob.size === 0) throw new Error("Render produced an empty video");
   const outputBlobKey = `video-${newId()}`;
   await putBlob(outputBlobKey, result.blob);
+  if (signal?.aborted) {
+    await deleteBlob(outputBlobKey);
+    throw new DOMException("Render cancelled", "AbortError");
+  }
 
   return {
     outputBlobKey,
