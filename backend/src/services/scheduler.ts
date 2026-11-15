@@ -81,8 +81,8 @@ async function processAutomationRules(): Promise<void> {
         const todayUploads = await sql`
           SELECT COUNT(*)::int AS count FROM upload_schedules
           WHERE automation_rule_id = ${rule.id}
-            AND created_at >= ${todayStart}
-            AND status IN ('pending', 'processing', 'completed')
+            AND updated_at >= ${todayStart}
+            AND status IN ('pending', 'processing', 'completed', 'needs_review')
         `;
 
         const uploadsToday = todayUploads[0]?.count || 0;
