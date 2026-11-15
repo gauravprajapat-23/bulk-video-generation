@@ -70,6 +70,15 @@ router.get("/google/callback", async (req: Request, res: Response) => {
       res.redirect(callbackRedirect("/youtube?error=no_channel"));
       return;
     }
+    // Unattended uploads require a refresh token, not just a short-lived access token.
+    if (!tokens.refresh_token) {
+      const existing = await sql`SELECT id FROM user_youtube_tokens
+        WHERE user_id = ${userId} AND channel_id = ${channel.id} AND refresh_token IS NOT NULL LIMIT 1`;
+      if (!existing.length) {
+        res.redirect(callbackRedirect("/youtube?error=refresh_token_required"));
+        return;
+      }
+    }
     const thumbnail = channel.snippet?.thumbnails?.default?.url || channel.snippet?.thumbnails?.medium?.url || null;
     await sql`
       INSERT INTO user_youtube_tokens
