@@ -7,6 +7,7 @@ import helmet from "helmet";
 import path from "path";
 import { ensureTables, isDbAvailable } from "./db";
 import { startScheduler } from "./services/scheduler";
+import { cleanOrphanedRenderTemps, reportInterruptedRenders } from "./services/renderRecovery";
 import { requireAuth } from "./middleware/auth";
 import sql from "./db";
 import authRoutes from "./routes/auth";
@@ -84,6 +85,15 @@ app.use("/api/autopilot", autopilotRoutes);
 
 async function start() {
   await ensureTables();
+  if (isDbAvailable()) {
+    try {
+      await reportInterruptedRenders();
+      const cleanup = await cleanOrphanedRenderTemps();
+      console.log("[render-recovery] startup cleanup:", cleanup);
+    } catch (err) {
+      console.error("[render-recovery] startup recovery check failed:", err);
+    }
+  }
   startScheduler();
   app.listen(PORT, () => {
     console.log(`[backend] listening on http://localhost:${PORT}`);
