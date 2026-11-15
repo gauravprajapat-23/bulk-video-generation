@@ -128,7 +128,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
         return "completed";
       } catch (err) {
         if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
-          updateProject(freshProject.id, { status: "pending" });
+          updateProject(freshProject.id, { status: "queued" });
           updateRenderJob(job.id, { status: "cancelled", finishedAt: new Date().toISOString() });
           setGenStatuses((cur) => ({ ...cur, [freshProject.id]: { status: "cancelled", jobId: job.id } }));
           return "cancelled";
