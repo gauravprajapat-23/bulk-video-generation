@@ -46,6 +46,10 @@ export async function runProjectRender({
     ? allAudio.find((a) => a.id === project.audioAssignment!.audioAssetId) ?? null
     : null;
 
+  if (project.audioAssignment && !audioAsset) {
+    throw new Error("Assigned audio file is missing from your library.");
+  }
+
   const result = await renderVideoLocally(
     { project, imageAssets: usedAssets, watermarkAsset, audioAsset },
     onProgress,
