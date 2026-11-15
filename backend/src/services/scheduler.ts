@@ -14,7 +14,7 @@ export async function quarantineStaleSchedules(): Promise<number> {
     UPDATE upload_schedules
     SET status = 'needs_review', updated_at = now()
     WHERE status = 'processing'
-      AND processing_started_at < now() - interval '6 hours'
+      AND COALESCE(processing_started_at, updated_at) < now() - interval '6 hours'
     RETURNING id
   `;
   if (stale.length) console.warn(`[scheduler] ${stale.length} stale job(s) need manual review`);
