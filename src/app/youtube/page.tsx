@@ -28,6 +28,7 @@ import {
 import {
   autoLoginWithGoogle,
   getBackendToken,
+  beginBackendYoutubeOAuth,
 } from "@/lib/backendClient";
 
 type ConnectMode = "consent" | "select_account" | "silent";
@@ -51,10 +52,15 @@ function YouTubeConnectionContent() {
 
   const [connectingMode, setConnectingMode] = useState<ConnectMode | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [serverConnecting, setServerConnecting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     const error = searchParams.get("error");
+    if (searchParams.get("connected") === "server") {
+      show("Server-side YouTube connection authorized. Scheduled uploads can now use a refresh token.", "success");
+      window.history.replaceState({}, "", "/youtube");
+    }
     if (searchParams.has("token")) {
       // Never consume bearer tokens delivered in a URL.
       show("Legacy OAuth links are no longer supported. Reconnect your YouTube channel.", "error");
@@ -89,6 +95,22 @@ function YouTubeConnectionContent() {
       show(err instanceof Error ? err.message : "Couldn't connect YouTube.", "error");
     } finally {
       setConnectingMode(null);
+    }
+  }
+
+  async function connectServerChannel() {
+    setServerConnecting(true);
+    try {
+      if (!getBackendToken()) {
+        const googleToken = await requestYouTubeAccessToken("consent");
+        const auth = await autoLoginWithGoogle(googleToken);
+        setBackendAuth({ connected: true, token: auth.token, userId: auth.userId, email: auth.email });
+      }
+      const authUrl = await beginBackendYoutubeOAuth();
+      window.location.assign(authUrl);
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Server channel connection failed", "error");
+      setServerConnecting(false);
     }
   }
 
@@ -211,6 +233,16 @@ function YouTubeConnectionContent() {
               )}
             </div>
           )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardTitle>Server-side YouTube scheduling</CardTitle>
+        <CardSubtitle>Connect separately to authorize unattended scheduled uploads. This stores a Google refresh token on the server, associated with your signed-in account.</CardSubtitle>
+        <div className="mt-3">
+          <Button variant="secondary" onClick={connectServerChannel} loading={serverConnecting}>
+            <Youtube size={16} /> Authorize server scheduling
+          </Button>
         </div>
       </Card>
 
