@@ -14,7 +14,7 @@ export async function quarantineStaleSchedules(): Promise<number> {
     UPDATE upload_schedules
     SET status = 'needs_review', updated_at = now()
     WHERE status = 'processing'
-      AND processing_started_at < now() - interval '30 minutes'
+      AND processing_started_at < now() - interval '6 hours'
     RETURNING id
   `;
   if (stale.length) console.warn(`[scheduler] ${stale.length} stale job(s) need manual review`);
@@ -137,7 +137,11 @@ async function processAutomationRules(): Promise<void> {
 export function startScheduler(): void {
   cron.schedule("* * * * *", async () => {
     if (!isDbAvailable()) return;
-    await quarantineStaleSchedules();
+    try {
+      await quarantineStaleSchedules();
+    } catch (err) {
+      console.error("[scheduler] stale-job reconciliation failed:", err);
+    }
     await processDueSchedules();
     await processAutomationRules();
     await processAutopilotConfigs();
