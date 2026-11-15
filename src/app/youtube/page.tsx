@@ -29,6 +29,8 @@ import {
   autoLoginWithGoogle,
   getBackendToken,
   beginBackendYoutubeOAuth,
+  listYouTubeChannels,
+  disconnectServerYoutubeChannel,
 } from "@/lib/backendClient";
 
 type ConnectMode = "consent" | "select_account" | "silent";
@@ -53,6 +55,7 @@ function YouTubeConnectionContent() {
   const [connectingMode, setConnectingMode] = useState<ConnectMode | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [serverConnecting, setServerConnecting] = useState(false);
+  const [serverChannels, setServerChannels] = useState<Array<{ channel_id: string; channel_title: string }>>([]);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
@@ -71,6 +74,13 @@ function YouTubeConnectionContent() {
       window.history.replaceState({}, "", "/youtube");
     }
   }, [searchParams, setBackendAuth, show]);
+
+  useEffect(() => {
+    if (!getBackendToken()) return;
+    listYouTubeChannels().then((channels) => {
+      if (Array.isArray(channels)) setServerChannels(channels);
+    }).catch(() => {});
+  }, [searchParams]);
 
   if (!hasHydrated) return <p className="text-sm text-muted">Loading…</p>;
 
@@ -111,6 +121,16 @@ function YouTubeConnectionContent() {
     } catch (err) {
       show(err instanceof Error ? err.message : "Server channel connection failed", "error");
       setServerConnecting(false);
+    }
+  }
+
+  async function disconnectServerChannel(channelId: string) {
+    try {
+      await disconnectServerYoutubeChannel(channelId);
+      setServerChannels((prev) => prev.filter((channel) => channel.channel_id !== channelId));
+      show("Server connection removed. Future scheduled uploads using this connection will fail until reauthorized.", "success");
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Unable to disconnect server channel", "error");
     }
   }
 
@@ -239,6 +259,16 @@ function YouTubeConnectionContent() {
       <Card>
         <CardTitle>Server-side YouTube scheduling</CardTitle>
         <CardSubtitle>Connect separately to authorize unattended scheduled uploads. This stores a Google refresh token on the server, associated with your signed-in account.</CardSubtitle>
+        {serverChannels.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {serverChannels.map((channel) => (
+              <div key={channel.channel_id} className="flex items-center justify-between gap-2 rounded-lg border border-border p-2">
+                <span className="truncate text-xs text-text">{channel.channel_title || channel.channel_id}</span>
+                <Button size="sm" variant="danger" onClick={() => disconnectServerChannel(channel.channel_id)}>Disconnect server</Button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="mt-3">
           <Button variant="secondary" onClick={connectServerChannel} loading={serverConnecting}>
             <Youtube size={16} /> Authorize server scheduling
