@@ -8,6 +8,7 @@ import {
   staticFile,
 } from "remotion";
 import type { AnimationPreset, TextOverlay } from "../types";
+import { buildFrameSegments } from "./frameTiming";
 
 export interface SlideData {
   imageUrl: string;
@@ -91,19 +92,12 @@ function Slide({ page, animPreset }: { page: SlideData; animPreset: AnimationPre
 export const SlideVideo: React.FC<SlideVideoProps> = ({ pages, animationPreset }) => {
   const { fps } = useVideoConfig();
 
-  // Build sequences from pages
-  let startFrame = 0;
-  const sequences = pages.map((page, index) => {
-    const durationFrames = Math.round((page.durationMs / 1000) * fps);
-    const seq = {
-      from: startFrame,
-      durationInFrames: durationFrames,
-      page,
-      key: `slide-${index}`,
-    };
-    startFrame += durationFrames;
-    return seq;
-  });
+  const boundaries = buildFrameSegments(pages.map((page) => page.durationMs), fps);
+  const sequences = pages.map((page, index) => ({
+    ...boundaries[index],
+    page,
+    key: `slide-${index}`,
+  }));
 
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
