@@ -58,6 +58,24 @@ router.get("/channels", requireAuth, async (req: Request, res: Response) => {
   }
 });
 
+// Revoking a server-side connection prevents future scheduled uploads using its tokens.
+router.delete("/channels/:channelId", requireAuth, async (req: Request, res: Response) => {
+  const { userId } = (req as any).auth;
+  try {
+    const rows = await sql`DELETE FROM user_youtube_tokens
+      WHERE user_id = ${userId} AND channel_id = ${req.params.channelId}
+      RETURNING channel_id`;
+    if (!rows.length) {
+      res.status(404).json({ error: "Channel not found" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[youtube] disconnect failed:", err);
+    res.status(500).json({ error: "Unable to disconnect channel" });
+  }
+});
+
 router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl } = req.body;
