@@ -273,14 +273,14 @@ export async function runAutopilotTickForConfig(
   } finally {
     if (uncertainUpload || (result.uploaded > 0 && !cursorPersisted)) {
       console.error(`[autopilot] run ${runId} needs manual reconciliation; preserving durable claim`);
-      return result;
+    } else {
+      // Never clear a claim owned by a different run.
+      await sql`
+        UPDATE autopilot_configs SET active_run_id = NULL,
+          active_run_started_at = NULL, updated_at = now()
+        WHERE id = ${config.id} AND active_run_id = ${runId}
+      `;
     }
-    // Never clear a claim owned by a different run.
-    await sql`
-      UPDATE autopilot_configs SET active_run_id = NULL,
-        active_run_started_at = NULL, updated_at = now()
-      WHERE id = ${config.id} AND active_run_id = ${runId}
-    `;
   }
 }
 
