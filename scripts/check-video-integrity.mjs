@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 const args = process.argv.slice(2);
 const file = args[0];
 if (!file || file.startsWith("--")) {
-  console.error("Usage: node scripts/check-video-integrity.mjs <file> [--audio] [--duration-ms N] [--tolerance-ms N]");
+  console.error("Usage: node scripts/check-video-integrity.mjs <file> [--audio] [--sync] [--duration-ms N] [--tolerance-ms N]");
   process.exit(2);
 }
 function value(flag, fallback) {
@@ -26,6 +26,7 @@ function value(flag, fallback) {
 const expectedDurationMs = value("--duration-ms", null);
 const toleranceMs = value("--tolerance-ms", 1200);
 const requireAudio = args.includes("--audio");
+const checkSync = args.includes("--sync");
 assert.ok(statSync(file).size > 1024, "Output file missing or too small");
 
 const probe = spawnSync("ffprobe", [
@@ -47,7 +48,8 @@ if (expectedDurationMs !== null) {
   assert.ok(Math.abs(duration * 1000 - expectedDurationMs) <= toleranceMs,
     `Video duration ${duration}s differs from expected ${expectedDurationMs / 1000}s by more than ${toleranceMs}ms`);
 }
-if (audio && Number.isFinite(Number(audio.duration)) && Number.isFinite(Number(video.duration))) {
+if (checkSync && !audio) throw new Error("--sync requires an audio stream");
+if (checkSync && audio && Number.isFinite(Number(audio.duration)) && Number.isFinite(Number(video.duration))) {
   const driftMs = Math.abs((Number(audio.duration) - Number(video.duration)) * 1000);
   assert.ok(driftMs <= toleranceMs, `Audio/video stream duration mismatch ${driftMs.toFixed(0)}ms`);
 }
