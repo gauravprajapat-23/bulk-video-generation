@@ -5,7 +5,7 @@ import express from "express";
 import cors from "cors";
 import helmet from "helmet";
 import path from "path";
-import { ensureTables } from "./db";
+import { ensureTables, isDbAvailable } from "./db";
 import { startScheduler } from "./services/scheduler";
 import { requireAuth } from "./middleware/auth";
 import sql from "./db";
@@ -65,6 +65,14 @@ app.get("/uploads/:filename", requireAuth, async (req, res) => {
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/health/ready", (_req, res) => {
+  if (!isDbAvailable()) {
+    res.status(503).json({ status: "unavailable", reason: "database not ready" });
+    return;
+  }
+  res.json({ status: "ready" });
 });
 
 app.use("/api/auth", authRoutes);
