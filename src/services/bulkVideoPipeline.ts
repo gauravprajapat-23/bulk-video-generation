@@ -89,6 +89,8 @@ export interface PipelineOptions {
   imagesPerVideo?: number;
   /** Default animation preset for all videos */
   defaultAnimationPreset?: AnimationPreset;
+  /** Source positions retained when regenerating a subset of CSV rows. */
+  sourceRowIndices?: number[];
 }
 
 const READABLE_PAUSE_MS = 700;
@@ -287,6 +289,7 @@ export function createProjectsFromCsv(
     defaultTransitionDurationMs = 500,
     imagesPerVideo = 1,
     defaultAnimationPreset = DEFAULT_ANIMATION_PRESET,
+    sourceRowIndices,
   } = options;
 
   const projects: VideoProject[] = [];
@@ -311,6 +314,7 @@ export function createProjectsFromCsv(
 
   for (let i = 0; i < csv.rows.length; i += 1) {
     const row = csv.rows[i];
+    const originalRowIndex = sourceRowIndices?.[i] ?? i;
     const meta = extractVideoMetadata(row);
     const imageStart = i * imagesPerVideo;
     const imageSlice = generatedImages.slice(imageStart, imageStart + imagesPerVideo);
@@ -323,8 +327,8 @@ export function createProjectsFromCsv(
     if (imageSlice.length === 0) {
       errors.push({
         type: "project_creation",
-        rowIndex: i,
-        message: `No images available for row ${i + 1}`,
+        rowIndex: originalRowIndex,
+        message: `No images available for row ${originalRowIndex + 1}`,
         retryable: true,
       });
       continue;
@@ -334,7 +338,7 @@ export function createProjectsFromCsv(
       const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${i + 1}`;
 
       const csvMeta: CsvProjectMetadata = {
-        csvRowIndex: i,
+        csvRowIndex: originalRowIndex,
         title: projectTitle,
         description: meta.description,
         tags: meta.tags,
@@ -377,7 +381,7 @@ export function createProjectsFromCsv(
     } catch (error) {
       errors.push({
         type: "project_creation",
-        rowIndex: i,
+        rowIndex: originalRowIndex,
         message: error instanceof Error ? error.message : "Failed to create project",
         retryable: false,
       });
@@ -409,13 +413,16 @@ export function createProjectsWithRetry(
     imagesPerVideo = 1,
   } = options;
 
+  const indices = [...new Set(failedRowIndices)].filter(
+    (i) => Number.isInteger(i) && i >= 0 && i < csv.rows.length,
+  );
   const filteredCsv: ParsedCsv = {
     headers: csv.headers,
-    rows: failedRowIndices.map((i) => csv.rows[i]).filter(Boolean),
+    rows: indices.map((i) => csv.rows[i]),
   };
 
-  const filteredImages = failedRowIndices.flatMap((i) =>
-    generatedImages.slice(i * imagesPerVideo, i * imagesPerVideo + imagesPerVideo)
+  const filteredImages = indices.flatMap((i) =>
+    generatedImages.slice(i * imagesPerVideo, (i + 1) * imagesPerVideo),
   );
 
   return createProjectsFromCsv(
@@ -424,7 +431,7 @@ export function createProjectsWithRetry(
     design,
     createProjectFn,
     addImagesToProjectFn,
-    options
+    { ...options, sourceRowIndices: indices }
   );
 }
 
