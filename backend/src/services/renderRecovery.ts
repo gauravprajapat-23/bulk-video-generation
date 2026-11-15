@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sql from "../db";
+import { isExpiredRenderTempFile, RENDER_MIN_ORPHAN_AGE_MS } from "./renderTempPolicy";
 
 const TEMP_FILE_RE = /^(?:autopilot-slide-[0-9a-f-]+-\d+\.png|autopilot-\d+-[a-z0-9]+\.mp4)$/i;
 const DEFAULT_MIN_AGE_MS = 24 * 60 * 60 * 1000;
@@ -39,10 +40,10 @@ export async function reportInterruptedRenders(): Promise<void> {
  * Intended to run once at startup, not periodically alongside live renders.
  */
 export async function cleanOrphanedRenderTemps(
-  minAgeMs = DEFAULT_MIN_AGE_MS,
+  minAgeMs = RENDER_MIN_ORPHAN_AGE_MS,
   tempDir = os.tmpdir(),
 ): Promise<{ deleted: number; skipped: number }> {
-  if (!Number.isSafeInteger(minAgeMs) || minAgeMs < DEFAULT_MIN_AGE_MS) {
+  if (!Number.isSafeInteger(minAgeMs) || minAgeMs < RENDER_MIN_ORPHAN_AGE_MS) {
     throw new Error("Minimum orphan age must be at least 24 hours");
   }
   const busy = await sql`
@@ -59,11 +60,11 @@ export async function cleanOrphanedRenderTemps(
   let skipped = 0;
   const files = await fs.readdir(tempDir, { withFileTypes: true });
   for (const item of files) {
-    if (!item.isFile() || !TEMP_FILE_RE.test(item.name)) continue;
+    if (!item.isFile()) continue;
     const fullPath = path.join(tempDir, item.name);
     try {
       const info = await fs.lstat(fullPath);
-      if (!info.isFile() || now - info.mtimeMs < minAgeMs) {
+      if (!info.isFile() || !isExpiredRenderTempFile(item.name, info.mtimeMs, now, minAgeMs)) {
         skipped++;
         continue;
       }
