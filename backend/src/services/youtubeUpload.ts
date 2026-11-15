@@ -130,10 +130,10 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
   if (claimed.length !== 1) return;
 
   const schedule = claimed[0];
-  const metadata = typeof schedule.metadata === "string" ? JSON.parse(schedule.metadata) : schedule.metadata;
   console.log(`[scheduler] claimed schedule ${scheduleId}`);
 
   try {
+    const metadata = typeof schedule.metadata === "string" ? JSON.parse(schedule.metadata) : schedule.metadata;
     if (!schedule.video_blob_url) {
       throw new Error("No uploaded video associated with this schedule");
     }
@@ -145,7 +145,8 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
       categoryId: metadata.categoryId,
       visibility: metadata.visibility,
       madeForKids: metadata.madeForKids,
-      publishAt: schedule.scheduled_at,
+      // A cron upload runs when due; passing a past publishAt to YouTube is invalid.
+      // The user-selected visibility is applied when the upload reaches YouTube.
     });
 
     // Persist the provider's ID immediately. If the process dies after YouTube
@@ -185,7 +186,7 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
     // state. Never automatically requeue this schedule.
     await sql`
       UPDATE upload_schedules
-      SET status = CASE WHEN youtube_video_id IS NULL THEN 'needs_review' ELSE 'needs_review' END,
+      SET status = 'needs_review',
           updated_at = now()
       WHERE id = ${scheduleId} AND status IN ('processing', 'needs_review')
     `;
