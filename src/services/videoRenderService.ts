@@ -12,6 +12,7 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_ANIMATION_PRESET } from "@/lib/types";
 import { getBlob } from "@/lib/idbStore";
+import { calculateAudioPlaybackWindow } from "@/services/audioTiming";
 
 export interface ElementAnimationInfo {
   elementId: string;
@@ -922,21 +923,18 @@ async function buildAudioGraph(
     const source = audioCtx.createBufferSource();
     source.buffer = audioBuffer;
 
-    const trimStartSec = Math.min(assignment.trimStartMs / 1000, audioBuffer.duration);
-    const trimEndSec = assignment.trimEndMs
-      ? Math.min(assignment.trimEndMs / 1000, audioBuffer.duration)
-      : audioBuffer.duration;
-    const usableSec = trimEndSec - trimStartSec;
-    if (!Number.isFinite(usableSec) || usableSec <= 0) throw new Error("Invalid audio trim range");
-
-    if (assignment.loopIfShorter && usableSec * 1000 < totalDurationMs) {
+    const playback = calculateAudioPlaybackWindow(
+      audioBuffer.duration, assignment.trimStartMs, assignment.trimEndMs,
+      totalDurationMs, assignment.loopIfShorter,
+    );
+    if (playback.loop) {
       source.loop = true;
-      source.loopStart = trimStartSec;
-      source.loopEnd = trimEndSec;
+      source.loopStart = playback.trimStartSec;
+      source.loopEnd = playback.trimEndSec;
     }
 
   source.connect(gain);
-  return { audioCtx, destination, source, trimStartSec, playbackDurationSec: Math.min(totalDurationMs / 1000, assignment.loopIfShorter ? totalDurationMs / 1000 : usableSec) };
+  return { audioCtx, destination, source, trimStartSec: playback.trimStartSec, playbackDurationSec: playback.playbackDurationSec };
   } catch {
     audioCtx.close().catch(() => {});
     return null;
