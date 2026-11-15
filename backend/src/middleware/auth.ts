@@ -22,11 +22,20 @@ export function signToken(payload: AuthPayload): string {
 
 export function verifyToken(token: string): AuthPayload | null {
   try {
-    const [header, body, signature] = token.split(".");
-    const expected = crypto.createHmac("sha256", SECRET).update(`${header}.${body}`).digest("base64url");
-    if (signature !== expected) return null;
-    const payload = JSON.parse(Buffer.from(body, "base64url").toString());
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts.some((p) => !p)) return null;
+    const [header, body, signature] = parts;
+    const jwtHeader = JSON.parse(Buffer.from(header, "base64url").toString("utf8"));
+    if (jwtHeader.alg !== "HS256" || jwtHeader.typ !== "JWT") return null;
+    const expected = crypto.createHmac("sha256", SECRET).update(`${header}.${body}`).digest();
+    const supplied = Buffer.from(signature, "base64url");
+    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) return null;
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    const now = Math.floor(Date.now() / 1000);
+    if (!Number.isInteger(payload.exp) || payload.exp <= now ||
+        !Number.isInteger(payload.iat) || payload.iat > now + 60 ||
+        typeof payload.userId !== "string" || !payload.userId ||
+        typeof payload.email !== "string" || !payload.email) return null;
     return { userId: payload.userId, email: payload.email };
   } catch {
     return null;
