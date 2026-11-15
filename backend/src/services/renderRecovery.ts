@@ -2,10 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sql from "../db";
-import { isExpiredRenderTempFile, RENDER_MIN_ORPHAN_AGE_MS } from "./renderTempPolicy";
-
-const TEMP_FILE_RE = /^(?:autopilot-slide-[0-9a-f-]+-\d+\.png|autopilot-\d+-[a-z0-9]+\.mp4)$/i;
-const DEFAULT_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+import { isExpiredRenderTempFile, isKnownRenderTempFile, RENDER_MIN_ORPHAN_AGE_MS } from "./renderTempPolicy";
 
 /**
  * Report unresolved work after a worker restart without retrying YouTube.
@@ -60,7 +57,7 @@ export async function cleanOrphanedRenderTemps(
   let skipped = 0;
   const files = await fs.readdir(tempDir, { withFileTypes: true });
   for (const item of files) {
-    if (!item.isFile()) continue;
+    if (!item.isFile() || !isKnownRenderTempFile(item.name)) continue;
     const fullPath = path.join(tempDir, item.name);
     try {
       const info = await fs.lstat(fullPath);
