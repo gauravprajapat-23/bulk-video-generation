@@ -85,8 +85,14 @@ export function clearBackendToken() {
   localStorage.removeItem(TOKEN_EXPIRY_KEY);
 }
 
-export function getYouTubeConnectUrl(userId: string, email: string): string {
-  return `${API_BASE}/auth/google?userId=${encodeURIComponent(userId)}&email=${encodeURIComponent(email)}`;
+/** Begins an authenticated, single-use Google OAuth flow for unattended publishing. */
+export async function beginBackendYoutubeOAuth(): Promise<string> {
+  const result = await apiFetch<{ authUrl: string }>("/auth/google/start", { method: "POST" });
+  const url = new URL(result.authUrl);
+  if (url.protocol !== "https:" || url.hostname !== "accounts.google.com") {
+    throw new Error("Unexpected Google authorization URL");
+  }
+  return url.toString();
 }
 
 export async function listSchedules() {
