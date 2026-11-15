@@ -2,20 +2,21 @@ import fs from "fs";
 import path from "path";
 import sql from "../db";
 
+/** Parse only app-owned media references, never remote fetch destinations. */
+export function parseOwnedMediaFilename(reference: string): string {
+  if (/^[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(reference)) return reference;
+  let url: URL;
+  try { url = new URL(reference); } catch { throw new Error("Invalid media reference"); }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
+      !/^\/uploads\/[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(url.pathname)) {
+    throw new Error("Only uploaded media references are accepted");
+  }
+  return url.pathname.slice("/uploads/".length);
+}
+
 /** Resolve only locally uploaded media belonging to the authenticated user. */
 export async function readOwnedVideo(userId: string, urlOrFilename: string): Promise<{ buffer: Buffer; mimeType: string }> {
-  let filename: string;
-  if (/^[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(urlOrFilename)) {
-    filename = urlOrFilename;
-  } else {
-    let parsed: URL;
-    try { parsed = new URL(urlOrFilename); } catch { throw new Error("Invalid media reference"); }
-    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash ||
-        !/^\/uploads\/[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(parsed.pathname)) {
-      throw new Error("Only uploaded media references are accepted");
-    }
-    filename = parsed.pathname.slice("/uploads/".length);
-  }
+  const filename = parseOwnedMediaFilename(urlOrFilename);
   const rows = await sql`SELECT filename, size_bytes FROM uploaded_media WHERE filename = ${filename} AND user_id = ${userId}`;
   if (!rows.length) throw new Error("Media not found or not owned by user");
   if (Number(rows[0].size_bytes) > 500 * 1024 * 1024) throw new Error("Media exceeds size limit");
