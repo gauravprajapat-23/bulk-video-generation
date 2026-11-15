@@ -1,3 +1,4 @@
+import type { ParsedCsv } from "./csvParser";
 export { parseCsv, DEFAULT_CSV_LIMITS } from "./csvParser";
 export type { ParsedCsv, CsvParseLimits } from "./csvParser";
 
