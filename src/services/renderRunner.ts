@@ -10,6 +10,7 @@ interface RunRenderParams {
   allImages: ImageAsset[];
   allAudio: AudioAsset[];
   onProgress: (percent: number) => void;
+  signal?: AbortSignal;
 }
 
 interface RunRenderResult {
@@ -25,6 +26,7 @@ export async function runProjectRender({
   allImages,
   allAudio,
   onProgress,
+  signal,
 }: RunRenderParams): Promise<RunRenderResult> {
   if (!project.images.length) {
     throw new Error("This project has no images to render.");
@@ -46,9 +48,12 @@ export async function runProjectRender({
 
   const result = await renderVideoLocally(
     { project, imageAssets: usedAssets, watermarkAsset, audioAsset },
-    onProgress
+    onProgress,
+    signal
   );
 
+  if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
+  if (result.blob.size === 0) throw new Error("Render produced an empty video");
   const outputBlobKey = `video-${newId()}`;
   await putBlob(outputBlobKey, result.blob);
 
