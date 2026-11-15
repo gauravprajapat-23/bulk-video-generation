@@ -48,6 +48,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
   const completedTimesRef = useRef<number[]>([]);
   // Track cancelled project IDs
   const cancelledRef = useRef<Set<string>>(new Set());
+  const controllersRef = useRef<Map<string, AbortController>>(new Map());
 
   const updateProgress = useCallback(
     (statuses: Record<string, ProjectGenStatus>, total: number) => {
@@ -84,6 +85,8 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
       if (!freshProject) return "failed";
 
       const projectStart = Date.now();
+      const controller = new AbortController();
+      controllersRef.current.set(freshProject.id, controller);
 
       setGenStatuses((cur) => ({ ...cur, [freshProject.id]: { status: "processing" } }));
       const job = createRenderJob(freshProject.id);
@@ -95,8 +98,12 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
           project: freshProject,
           allImages: useAppStore.getState().images,
           allAudio: useAppStore.getState().audio,
-          onProgress: (pct) => updateRenderJob(job.id, { progressPercent: pct }),
+          onProgress: (pct) => {
+            if (!controller.signal.aborted) updateRenderJob(job.id, { progressPercent: pct });
+          },
+          signal: controller.signal,
         });
+        if (controller.signal.aborted) throw new DOMException("Render cancelled", "AbortError");
         updateProject(freshProject.id, {
           status: "completed",
           outputBlobKey: result.outputBlobKey,
@@ -120,6 +127,12 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
         setGenStatuses((cur) => ({ ...cur, [freshProject.id]: { status: "completed", jobId: job.id } }));
         return "completed";
       } catch (err) {
+        if (controller.signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+          updateProject(freshProject.id, { status: "pending" });
+          updateRenderJob(job.id, { status: "cancelled", finishedAt: new Date().toISOString() });
+          setGenStatuses((cur) => ({ ...cur, [freshProject.id]: { status: "cancelled", jobId: job.id } }));
+          return "cancelled";
+        }
         const message = err instanceof Error ? err.message : "Render failed.";
         updateProject(freshProject.id, { status: "failed" });
         updateRenderJob(job.id, {
@@ -129,6 +142,8 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
         });
         setGenStatuses((cur) => ({ ...cur, [freshProject.id]: { status: "failed", error: message, jobId: job.id } }));
         return "failed";
+      } finally {
+        controllersRef.current.delete(freshProject.id);
       }
     },
     [createRenderJob, updateRenderJob, updateProject],
@@ -148,7 +163,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
       setGenStatuses(initial);
       setProgress({ total: targets.length, completed: 0, failed: 0, processing: 0, pending: targets.length, overallPercent: 0, estimatedRemainingSec: null, elapsedSec: 0 });
 
-      const concurrency = options?.concurrency ?? 2;
+      const concurrency = Math.max(1, Math.floor(options?.concurrency ?? 2));
       let completedCount = 0;
       let failedCount = 0;
 
@@ -182,6 +197,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
       if (!project) return;
 
       // Reset status to pending and re-render
+      cancelledRef.current.delete(projectId);
       setGenStatuses((cur) => ({ ...cur, [projectId]: { status: "pending" } }));
       await renderSingleProject(project);
 
@@ -198,6 +214,7 @@ export function useVideoRender(options?: UseVideoRenderOptions) {
   const cancelRender = useCallback(
     (projectId: string) => {
       cancelledRef.current.add(projectId);
+      controllersRef.current.get(projectId)?.abort();
       setGenStatuses((cur) => ({ ...cur, [projectId]: { status: "cancelled" } }));
       // Update progress to reflect cancellation
       setGenStatuses((cur) => {
