@@ -13,7 +13,7 @@ if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, uploadsDir),
   filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || ".webm";
+    const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
   },
 });
@@ -23,7 +23,7 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = ["video/webm", "video/mp4", "video/quicktime", "video/x-msvideo", "application/octet-stream"];
-    if (allowed.includes(file.mimetype) || file.originalname.match(/\.(webm|mp4|mov|avi)$/i)) {
+    if (/\.(webm|mp4|mov|avi)$/i.test(file.originalname) && allowed.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error("Only video files are allowed"));
