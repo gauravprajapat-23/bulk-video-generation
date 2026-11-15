@@ -898,6 +898,7 @@ interface AudioGraph {
   destination: MediaStreamAudioDestinationNode;
   source: AudioBufferSourceNode;
   trimStartSec: number;
+  playbackDurationSec: number;
 }
 
 async function buildAudioGraph(
@@ -934,7 +935,7 @@ async function buildAudioGraph(
     }
 
   source.connect(gain);
-  return { audioCtx, destination, source, trimStartSec };
+  return { audioCtx, destination, source, trimStartSec, playbackDurationSec: Math.min(totalDurationMs / 1000, assignment.loopIfShorter ? totalDurationMs / 1000 : usableSec) };
   } catch {
     audioCtx.close().catch(() => {});
     return null;
@@ -1097,7 +1098,7 @@ export async function renderVideoLocally(
 
     try {
       recorder.start();
-      if (audioGraph) audioGraph.source.start(0, audioGraph.trimStartSec);
+      if (audioGraph) audioGraph.source.start(0, audioGraph.trimStartSec, audioGraph.playbackDurationSec);
       frameId = requestAnimationFrame(frame);
     } catch (err) {
       fail(err instanceof Error ? err : new Error(String(err)));
