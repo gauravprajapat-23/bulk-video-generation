@@ -211,19 +211,37 @@ function UploadSchedulerContent() {
   // ---- Bulk SEO field: paste / import / export, all operating on the same `rows` state ----
 
   function applyBulkText(text: string) {
-    const parsed = parseBulkSeoText(text);
-    if (!parsed || parsed.rows.length === 0) {
-      show("Couldn't read that as a table. Paste tab- or comma-separated data.", "error");
-      return;
+    try {
+      const parsed = parseBulkSeoText(text);
+      if (!parsed || parsed.rows.length === 0) {
+        show("Could not read a table. Use tab- or comma-separated rows.", "error");
+        return;
+      }
+      if (parsed.rows.length > rows.length) {
+        show(`CSV contains ${parsed.rows.length} rows but only ${rows.length} videos are selected. Extra rows were not applied.`, "error");
+        return;
+      }
+      setRows((cur) => applyParsedRows(cur, parsed));
+      show(`Applied SEO to ${Math.min(parsed.rows.length, rows.length)} video(s).`, "success");
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Invalid CSV import", "error");
     }
-    setRows((cur) => applyParsedRows(cur, parsed));
-    show(`Applied SEO to ${Math.min(parsed.rows.length, rows.length)} video(s).`, "success");
   }
 
   function handleBulkFile(file: File) {
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      show("CSV file exceeds the 5 MB import limit.", "error");
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => show("Could not read CSV file.", "error");
     reader.onload = (ev) => {
-      const text = ev.target?.result as string;
+      const text = ev.target?.result;
+      if (typeof text !== "string") {
+        show("CSV file contents are not readable text.", "error");
+        return;
+      }
       setBulkText(text);
       applyBulkText(text);
     };
