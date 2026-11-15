@@ -192,6 +192,8 @@ export async function ensureTables() {
       )
     `;
 
+    await sql`ALTER TABLE autopilot_configs ADD COLUMN IF NOT EXISTS active_run_id UUID`;
+    await sql`ALTER TABLE autopilot_configs ADD COLUMN IF NOT EXISTS active_run_started_at TIMESTAMPTZ`;
     await sql`CREATE INDEX IF NOT EXISTS idx_autopilot_configs_user ON autopilot_configs(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_autopilot_jobs_config ON autopilot_jobs(config_id)`;
 
