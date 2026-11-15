@@ -137,6 +137,10 @@ export async function ensureTables() {
     await sql`CREATE INDEX IF NOT EXISTS idx_schedules_user ON upload_schedules(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_uploads_user ON youtube_uploads(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_rules_user ON automation_rules(user_id)`;
+    await sql`ALTER TABLE automation_rules ADD COLUMN IF NOT EXISTS last_claimed_slot TEXT`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_schedules_processing_started
+      ON upload_schedules(processing_started_at) WHERE status = 'processing'`;
+
 
     // Autopilot tables
     await sql`
