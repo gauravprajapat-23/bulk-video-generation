@@ -232,7 +232,7 @@ export async function fetchOwnedVideoBlob(mediaUrl: string, signal?: AbortSignal
   if (!token) throw new Error("Sign in to preview server media");
   const apiOrigin = new URL(API_BASE, window.location.origin).origin;
   const url = new URL(mediaUrl, apiOrigin);
-  if (url.origin !== apiOrigin || !/^\/uploads\/[A-Za-z0-9_-]+\\.(webm|mp4|mov|avi)$/i.test(url.pathname) || url.search || url.hash) {
+  if (url.origin !== apiOrigin || !/^\/uploads\/[A-Za-z0-9_-]+\.(webm|mp4|mov|avi)$/i.test(url.pathname) || url.search || url.hash) {
     throw new Error("Invalid protected media URL");
   }
   const response = await fetch(url.toString(), { headers: { Authorization: `Bearer ${token}` }, signal });
