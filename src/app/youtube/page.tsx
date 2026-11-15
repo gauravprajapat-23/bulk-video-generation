@@ -28,7 +28,6 @@ import {
 import {
   autoLoginWithGoogle,
   getBackendToken,
-  setBackendToken,
 } from "@/lib/backendClient";
 
 type ConnectMode = "consent" | "select_account" | "silent";
@@ -55,24 +54,10 @@ function YouTubeConnectionContent() {
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
-    const token = searchParams.get("token");
-    const channelId = searchParams.get("channelId");
     const error = searchParams.get("error");
-
-    if (token) {
-      setBackendToken(token);
-      const stored = localStorage.getItem("video-maker-store");
-      let userId = "anonymous";
-      let email = "user@local.app";
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          userId = parsed.state?.youtube?.channelId || userId;
-          email = `${userId}@local.app`;
-        } catch {}
-      }
-      setBackendAuth({ connected: true, token, userId, email });
-      show("Backend connected with YouTube channel.", "success");
+    if (searchParams.has("token")) {
+      // Never consume bearer tokens delivered in a URL.
+      show("Legacy OAuth links are no longer supported. Reconnect your YouTube channel.", "error");
       window.history.replaceState({}, "", "/youtube");
     }
     if (error) {
