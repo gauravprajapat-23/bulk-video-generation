@@ -104,6 +104,22 @@ export async function runAutopilotTickForConfig(
   if (!config.csv_rows || config.csv_rows.length === 0) return result;
   if (config.csv_cursor >= config.csv_rows.length) return result;
 
+  // One durable claim per config: concurrent cron/manual runners cannot start
+  // the same CSV batch. An interrupted run must be reviewed, not auto-replayed.
+  const runId = crypto.randomUUID();
+  const claimed = await sql`
+    UPDATE autopilot_configs
+    SET active_run_id = ${runId}, active_run_started_at = now(), updated_at = now()
+    WHERE id = ${config.id} AND is_enabled = true AND active_run_id IS NULL
+    RETURNING *
+  `;
+  if (claimed.length !== 1) {
+    result.errors.push("Autopilot run already active or awaiting reconciliation");
+    return result;
+  }
+  config = claimed[0];
+
+  try {
   const design: BulkImageDesign = config.design_data;
   if (!design?.pages || design.pages.length === 0) {
     result.errors.push("No design pages");
@@ -227,6 +243,9 @@ export async function runAutopilotTickForConfig(
           WHERE id = ${jobId}
         `;
         result.errors.push(`Row ${rowIndex + 1}: ${msg}`);
+        // Cursor counts contiguous successes only. Continuing after a failed row
+        // would skip it and re-upload later successful rows on the next run.
+        break;
       }
     }
 
@@ -245,6 +264,14 @@ export async function runAutopilotTickForConfig(
   }
 
   return result;
+  } finally {
+    // Never clear a claim owned by a different run.
+    await sql`
+      UPDATE autopilot_configs SET active_run_id = NULL,
+        active_run_started_at = NULL, updated_at = now()
+      WHERE id = ${config.id} AND active_run_id = ${runId}
+    `;
+  }
 }
 
 /**
