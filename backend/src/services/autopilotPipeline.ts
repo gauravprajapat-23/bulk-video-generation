@@ -147,6 +147,7 @@ export async function runAutopilotTickForConfig(
     // Process each row
     for (const { row, rowIndex } of rowsToProcess) {
       const jobId = crypto.randomUUID();
+      let renderOutputPath: string | null = null;
 
       // Create job record
       await sql`
@@ -193,6 +194,8 @@ export async function runAutopilotTickForConfig(
           height: design.height,
         });
 
+        renderOutputPath = renderResult.outputPath;
+
         // 4. Upload to YouTube
         await sql`UPDATE autopilot_jobs SET status = 'uploading' WHERE id = ${jobId}`;
 
@@ -222,7 +225,7 @@ export async function runAutopilotTickForConfig(
             status = 'completed',
             youtube_video_id = ${uploadResult.youtubeVideoId},
             youtube_video_url = ${uploadResult.youtubeVideoUrl},
-            video_blob_url = ${renderResult.outputPath},
+            video_blob_url = NULL,
             completed_at = now()
           WHERE id = ${jobId}
         `;
@@ -241,6 +244,13 @@ export async function runAutopilotTickForConfig(
 
       } catch (err: any) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        // A failed render or upload must not strand temporary media on disk.
+        if (renderOutputPath) {
+          await fs.promises.unlink(renderOutputPath).catch(() => {});
+        }
+        for (let i = 0; i < design.pages.length; i++) {
+          await fs.promises.unlink(`/tmp/autopilot-slide-${jobId}-${i}.png`).catch(() => {});
+        }
         await sql`
           UPDATE autopilot_jobs SET
             status = 'failed',
