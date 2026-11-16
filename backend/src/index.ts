@@ -1,4 +1,5 @@
 import dotenv from "dotenv";
+import { requireReleaseConfig } from "./releaseConfig";
 dotenv.config();
 
 import express from "express";
@@ -19,10 +20,11 @@ import autopilotRoutes from "./routes/autopilot";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "4000", 10);
+requireReleaseConfig();
 
 const ALLOWED_ORIGINS = (
   process.env.ALLOWED_ORIGINS ||
-  "http://localhost:3000,http://localhost:3001,https://video-maker-frontend.vercel.app,https://video-maker-frontend.onrender.com"
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3000,http://localhost:3001")
 )
   .split(",")
   .map((s) => s.trim())
@@ -85,6 +87,9 @@ app.use("/api/autopilot", autopilotRoutes);
 
 async function start() {
   await ensureTables();
+  if (process.env.NODE_ENV === "production" && !isDbAvailable()) {
+    throw new Error("Production startup aborted: database unavailable or schema checks failed");
+  }
   if (isDbAvailable()) {
     try {
       await reportInterruptedRenders();
@@ -94,11 +99,18 @@ async function start() {
       console.error("[render-recovery] startup recovery check failed:", err);
     }
   }
-  startScheduler();
+  if (process.env.NODE_ENV !== "production" || process.env.SCHEDULER_ENABLED === "true") {
+    startScheduler();
+  } else {
+    console.log("[backend] scheduler disabled for this instance");
+  }
   app.listen(PORT, () => {
     console.log(`[backend] listening on http://localhost:${PORT}`);
     console.log(`[backend] allowed origins: ${ALLOWED_ORIGINS.join(", ")}`);
   });
 }
 
-start();
+start().catch((err) => {
+  console.error("[backend] startup failed:", err);
+  process.exitCode = 1;
+});
