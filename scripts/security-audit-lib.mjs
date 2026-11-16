@@ -4,14 +4,13 @@
  */
 export const LEVELS = ["info", "low", "moderate", "high", "critical"];
 
-export function summarizeAudit(report, { includeDev = true } = {}) {
+export function summarizeAudit(report) {
   if (!report || typeof report !== "object" || !report.metadata?.vulnerabilities || !report.vulnerabilities) {
     throw new Error("npm audit response missing advisory data");
   }
   const counts = Object.fromEntries(LEVELS.map((x) => [x, 0]));
   const findings = [];
   for (const [name, item] of Object.entries(report.vulnerabilities)) {
-    if (!includeDev && item.isDirect === false && item.nodes?.length === 0) continue;
     if (!LEVELS.includes(item.severity)) throw new Error("Unknown severity for " + name);
     counts[item.severity]++;
     const via = (item.via || []).map((v) => typeof v === "string" ? v : ({
