@@ -70,12 +70,17 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.get("/api/health/ready", (_req, res) => {
+app.get("/api/health/ready", async (_req, res) => {
   if (!isDbAvailable()) {
     res.status(503).json({ status: "unavailable", reason: "database not ready" });
     return;
   }
-  res.json({ status: "ready" });
+  try {
+    await sql`SELECT 1 AS healthy`;
+    res.json({ status: "ready" });
+  } catch {
+    res.status(503).json({ status: "unavailable", reason: "database unavailable" });
+  }
 });
 
 app.use("/api/auth", authRoutes);
