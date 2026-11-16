@@ -13,3 +13,6 @@ uploads/
 *.avi
 !backend/.env.example
 !.env.local.example
+
+# Generated dependency audit output (review locally, never commit)
+reports/security-audit.json
