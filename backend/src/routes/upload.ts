@@ -3,11 +3,12 @@ import { requireAuth } from "../middleware/auth";
 import sql from "../db";
 import multer from "multer";
 import path from "path";
+import { getMediaStorageDir } from "../services/mediaStorage";
 import fs from "fs";
 
 const router = Router();
 
-const uploadsDir = path.join(__dirname, "../../uploads");
+const uploadsDir = getMediaStorageDir();
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 const storage = multer.diskStorage({
