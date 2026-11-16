@@ -38,9 +38,13 @@ try {
   run(root, ["run", "build"]);
   run(backend, ["ci"]);
   run(backend, ["run", "check:security"]);
+  run(root, ["exec", "--", "node", "--test", "scripts/security-audit.test.mjs"]);
   if (audit) {
-    run(root, ["audit", "--omit=dev", "--audit-level=high"]);
-    run(backend, ["audit", "--omit=dev", "--audit-level=high"]);
+    const result = spawnSync(process.execPath, ["scripts/security-audit.mjs"], {
+      cwd: root, stdio: "inherit", env: process.env,
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) throw new Error("Security advisory audit failed");
   }
   if (production) run(backend, ["run", "preflight:release"]);
   console.log("[REL-001] PASS: build/tests complete" +
