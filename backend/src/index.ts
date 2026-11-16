@@ -5,7 +5,7 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import path from "path";
+import { getMediaStorageDir } from "./services/mediaStorage";
 import { ensureTables, isDbAvailable } from "./db";
 import { startScheduler } from "./services/scheduler";
 import { cleanOrphanedRenderTemps, reportInterruptedRenders } from "./services/renderRecovery";
@@ -59,7 +59,7 @@ app.get("/uploads/:filename", requireAuth, async (req, res) => {
       res.status(404).json({ error: "Media not found" });
       return;
     }
-    res.sendFile(filename, { root: path.join(__dirname, "../uploads"), dotfiles: "deny" });
+    res.sendFile(filename, { root: getMediaStorageDir(), dotfiles: "deny" });
   } catch (err) {
     console.error("[media] authorization failed:", err);
     res.status(500).json({ error: "Media access unavailable" });
