@@ -34,6 +34,7 @@ try {
   if (nodeMajor < 20) throw new Error("Node.js 20+ is required");
   run(root, ["ci"]);
   run(root, ["exec", "--", "tsc", "--noEmit"]);
+  run(root, ["run", "lint"]);
   run(root, ["run", "build"]);
   run(backend, ["ci"]);
   run(backend, ["run", "check:security"]);
