@@ -113,7 +113,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
                         className={`flex min-h-[clamp(34px,5vw,78px)] items-center gap-[4%] rounded-lg border p-[4%] ${revealed && correct
                           ? "border-[#66dd9d] bg-[#176744]"
                           : revealed ? "border-[#344859] bg-[#122437]/65"
-                          : showOptions ? "border-[#c6a15f]/65 bg-[#1a3348]" : "border-[#56677a]/60 bg-[#1a2e42]/65"`}
+                          : showOptions ? "border-[#c6a15f]/65 bg-[#1a3348]" : "border-[#56677a]/60 bg-[#1a2e42]/65"}`}
                       >
                         <span className={`flex h-[clamp(22px,2.5vw,40px)] w-[clamp(22px,2.5vw,40px)] shrink-0 items-center justify-center rounded-md text-[clamp(10px,1.4vw,23px)] font-black ${revealed && correct ? "bg-[#d1ffe0] text-[#0d5537]" : "bg-[#dcb36e] text-[#122538]"}`}>{key}</span>
                         <span className="min-w-0 break-words text-[clamp(9px,1.5vw,22px)] font-semibold leading-tight">{option}</span>
