@@ -52,28 +52,32 @@ export default function FootballQuizTemplatePage() {
   useEffect(() => {
     if (!timeline || !playing) return;
     let animationFrame = 0;
-    let lastTime = 0;
-    let carry = 0;
+    let startTime: number | null = null;
+    const startFrame = Math.min(previewFrame, timeline.totalFrames - 1);
+    const pauseWhenHidden = () => {
+      if (document.hidden) setPlaying(false);
+    };
+    document.addEventListener("visibilitychange", pauseWhenHidden);
     const tick = (now: number) => {
-      if (!lastTime) lastTime = now;
-      carry += Math.min(100, now - lastTime) * timeline.fps / 1000;
-      lastTime = now;
-      const advance = Math.floor(carry);
-      if (advance > 0) {
-        carry -= advance;
-        setPreviewFrame((frame) => {
-          const next = frame + advance;
-          if (next >= timeline.totalFrames) {
-            setPlaying(false);
-            return timeline.totalFrames - 1;
-          }
-          return next;
-        });
+      if (startTime === null) startTime = now;
+      const next = Math.min(
+        timeline.totalFrames - 1,
+        startFrame + Math.floor((now - startTime) * timeline.fps / 1000),
+      );
+      setPreviewFrame(next);
+      if (next >= timeline.totalFrames - 1) {
+        setPlaying(false);
+      } else {
+        animationFrame = requestAnimationFrame(tick);
       }
-      animationFrame = requestAnimationFrame(tick);
     };
     animationFrame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(animationFrame);
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      document.removeEventListener("visibilitychange", pauseWhenHidden);
+    };
+    // Start a new playback clock only when play state or compiled timeline changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, timeline]);
 
   async function handleUpload(file?: File) {
