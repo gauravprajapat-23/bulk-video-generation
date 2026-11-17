@@ -1,6 +1,6 @@
 import React from "react";
 import { AbsoluteFill, Audio, Composition, Sequence, useCurrentFrame } from "remotion";
-import type { RenderQuiz, RenderQuizTimeline, RenderQuizPhase } from "../services/quizRenderValidation";
+import type { RenderQuiz, RenderQuizTimeline } from "../services/quizRenderValidation";
 
 export interface QuizRenderProps {
   quiz: RenderQuiz;
@@ -125,8 +125,9 @@ function QuizFrame({quiz,timeline}:{quiz:RenderQuiz;timeline:RenderQuizTimeline}
   </AbsoluteFill>;
 }
 
+type QuizToneCue = {key:string;from:number;type:"intro"|"tick"|"urgent"|"suspense"|"reveal"};
+
 export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
-  const frame=useCurrentFrame();
   const voiceActive=audio.narrationData!==null;
   return <AbsoluteFill>
     <QuizFrame quiz={quiz} timeline={timeline}/>
@@ -135,7 +136,7 @@ export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
       return Math.max(0,fade)*audio.musicVolume*(voiceActive?audio.ducking:1);
     }}/>}
     {audio.narrationData&&<Audio src={audio.narrationData} volume={audio.voiceVolume}/>}
-    {timeline.phases.flatMap(phase=>{
+    {timeline.phases.flatMap((phase):QuizToneCue[]=>{
       if (phase.questionIndex===undefined) {
         if (!audio.effectsEnabled || !["intro","halftime","outro"].includes(phase.kind)) return [];
         return [{key:`${phase.kind}-${phase.startFrame}`,from:phase.startFrame,type:"intro" as const}];
