@@ -19,8 +19,8 @@ function StadiumBackdrop() {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_10%,#284c5d_0%,#0b1b2b_45%,#07121f_100%)]"/>
-      <div className="absolute -left-[15%] top-[-10%] h-[45%] w-[62%] rotate-[-25deg] bg-[linear-gradient(90deg,transparent,rgba(217,178,96,0.16),transparent)] blur-2xl"/>
-      <div className="absolute -right-[15%] top-[-10%] h-[45%] w-[62%] rotate-[25deg] bg-[linear-gradient(90deg,transparent,rgba(217,178,96,0.14),transparent)] blur-2xl"/>
+      <div className="quiz-gold-light quiz-gold-light-left absolute -left-[15%] top-[-10%] h-[45%] w-[62%] rotate-[-25deg] bg-[linear-gradient(90deg,transparent,rgba(217,178,96,0.16),transparent)] blur-2xl"/>
+      <div className="quiz-gold-light quiz-gold-light-right absolute -right-[15%] top-[-10%] h-[45%] w-[62%] rotate-[25deg] bg-[linear-gradient(90deg,transparent,rgba(217,178,96,0.14),transparent)] blur-2xl"/>
       <div className="absolute inset-x-0 bottom-[8%] h-[32%] rounded-[50%] border-t border-[#b7d5df]/20 bg-[radial-gradient(ellipse_at_50%_100%,rgba(28,78,65,0.8),rgba(6,20,33,0))]"/>
       <div className="absolute inset-x-[10%] bottom-[8%] h-[20%] rounded-[50%] border-t border-[#9bb3c6]/10"/>
       <div className="absolute inset-x-[17%] bottom-[8%] h-[16%] rounded-[50%] border-t border-[#a6c9b8]/10"/>
@@ -32,7 +32,7 @@ function StadiumBackdrop() {
 
 function PlayerSilhouette({ revealed }: { revealed: boolean }) {
   return (
-    <div aria-label={revealed ? "Player identity revealed" : "Mystery player silhouette"} className="relative mx-auto flex aspect-[4/3] w-full max-w-[240px] items-end justify-center overflow-hidden rounded-2xl border border-[#c4a05e]/40 bg-[#112a3a] shadow-[inset_0_0_35px_#06121d]">
+    <div aria-label={revealed ? "Player identity revealed" : "Mystery player silhouette"} className="quiz-gold-player relative mx-auto flex aspect-[4/3] w-full max-w-[240px] items-end justify-center overflow-hidden rounded-2xl border border-[#c4a05e]/40 bg-[#112a3a] shadow-[inset_0_0_35px_#06121d]">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_25%,rgba(235,186,93,0.2),transparent_60%)]"/>
       <svg viewBox="0 0 320 240" className="relative w-full" role="img" aria-label="Generic player silhouette, not an actual player photo">
         <ellipse cx="160" cy="75" rx="39" ry="44" fill="#06111d" stroke="#d5ae60" strokeOpacity=".25" strokeWidth="2"/>
@@ -57,7 +57,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
 
   return (
     <div data-testid="champions-gold-scene" data-phase={phase}
-      className="relative aspect-video w-full overflow-hidden rounded-2xl border border-[#b99a58]/45 bg-[#091827] font-sora text-[#f6f7f9] shadow-[0_20px_65px_rgba(0,0,0,0.35)]">
+      className="quiz-gold-scene relative aspect-video w-full overflow-hidden rounded-2xl border border-[#b99a58]/45 bg-[#091827] font-sora text-[#f6f7f9] shadow-[0_20px_65px_rgba(0,0,0,0.35)]">
       <StadiumBackdrop />
       <div className="absolute inset-0 flex flex-col p-[4%]">
         <header className="relative z-10 flex items-center justify-between border-b border-[#dab16b]/25 pb-[1.3%]">
@@ -70,7 +70,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
         </header>
 
         {!showQuestion ? (
-          <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-[3%] text-center">
+          <div className="quiz-gold-title relative z-10 flex flex-1 flex-col items-center justify-center gap-[3%] text-center">
             <div className="flex h-[18%] items-center justify-center rounded-full border border-[#e6bd6f]/50 bg-[#e2b55f]/10 p-[2%] text-[#e9bd6c]">
               <Trophy className="h-full w-full"/>
             </div>
@@ -88,7 +88,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
           </div>
         ) : (
           <>
-            <div className="relative z-10 flex min-h-0 flex-1 items-center gap-[4%] py-[3%]">
+            <div className="quiz-gold-question relative z-10 flex min-h-0 flex-1 items-center gap-[4%] py-[3%]">
               <div className="flex h-full w-[36%] shrink-0 flex-col items-center justify-center gap-[5%]">
                 <PlayerSilhouette revealed={revealed}/>
                 <div className="flex w-full flex-wrap justify-center gap-1.5">
@@ -123,7 +123,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
                   })}
                 </div>
                 {revealed && (
-                  <div role="status" className="mt-[2%] rounded-lg border border-[#d8b16c]/50 bg-[#e9bd70]/10 px-[4%] py-[2%] text-[clamp(9px,1.2vw,17px)] text-[#f2dcae]">
+                  <div role="status" className="quiz-gold-reveal mt-[2%] rounded-lg border border-[#d8b16c]/50 bg-[#e9bd70]/10 px-[4%] py-[2%] text-[clamp(9px,1.2vw,17px)] text-[#f2dcae]">
                     <span className="font-black text-[#ffe1a5]">ANSWER REVEALED</span> — {question?.explanation}
                   </div>
                 )}
