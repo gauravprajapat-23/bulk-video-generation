@@ -2,7 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Clock3, Download, Film, FileUp, ShieldCheck, Trophy } from "lucide-react";
+import { ArrowLeft, Download, Film, FileUp, ShieldCheck, Play, Pause, RotateCcw } from "lucide-react";
+import { ChampionsGoldScene } from "@/components/quiz/ChampionsGoldScene";
+import { locateFootballQuizFrame, readableQuizPhase } from "@/lib/footballQuizPlayback";
 import {
   compileFootballQuizTimeline,
   makeFootballQuiz,
@@ -21,6 +23,8 @@ export default function FootballQuizTemplatePage() {
   const [selected, setSelected] = useState(0);
   const [voiceover, setVoiceover] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [previewFrame, setPreviewFrame] = useState(0);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -43,6 +47,35 @@ export default function FootballQuizTemplatePage() {
     catch { return null; }
   }, [quiz]);
 
+  const scene = useMemo(() => timeline ? locateFootballQuizFrame(timeline, previewFrame) : null, [timeline, previewFrame]);
+
+  useEffect(() => {
+    if (!timeline || !playing) return;
+    let animationFrame = 0;
+    let lastTime = 0;
+    let carry = 0;
+    const tick = (now: number) => {
+      if (!lastTime) lastTime = now;
+      carry += Math.min(100, now - lastTime) * timeline.fps / 1000;
+      lastTime = now;
+      const advance = Math.floor(carry);
+      if (advance > 0) {
+        carry -= advance;
+        setPreviewFrame((frame) => {
+          const next = frame + advance;
+          if (next >= timeline.totalFrames) {
+            setPlaying(false);
+            return timeline.totalFrames - 1;
+          }
+          return next;
+        });
+      }
+      animationFrame = requestAnimationFrame(tick);
+    };
+    animationFrame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [playing, timeline]);
+
   async function handleUpload(file?: File) {
     if (!file) return;
     setError("");
@@ -51,6 +84,8 @@ export default function FootballQuizTemplatePage() {
       const next = makeFootballQuiz(parseFootballQuizCsv(await file.text()), { voiceover });
       setQuiz(next);
       setSelected(0);
+      setPreviewFrame(0);
+      setPlaying(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid quiz CSV");
     }
@@ -79,6 +114,17 @@ export default function FootballQuizTemplatePage() {
   }
 
   const question = quiz?.questions[selected];
+  const liveQuestion = scene?.phase.questionIndex === undefined ? null : quiz?.questions[scene.phase.questionIndex] || null;
+  const liveQuestionIndex = scene?.phase.questionIndex ?? 0;
+  const previewSeconds = scene ? scene.frame / 30 : 0;
+
+  function seekQuestion(index: number) {
+    setSelected(index);
+    if (!timeline) return;
+    const target = timeline.phases.find((p) => p.questionIndex === index && p.kind === "entrance");
+    if (target) setPreviewFrame(target.startFrame);
+    setPlaying(false);
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -124,7 +170,7 @@ export default function FootballQuizTemplatePage() {
           <div className="max-h-[480px] overflow-auto rounded-xl border border-border bg-panel p-3">
             <h2 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-muted">Questions</h2>
             {quiz?.questions.map((q, index) => (
-              <button type="button" key={q.id} onClick={() => setSelected(index)}
+              <button type="button" key={q.id} onClick={() => seekQuestion(index)}
                 className={`mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-xs ${index === selected ? "bg-accent text-white" : "text-muted hover:bg-panel2 hover:text-text"}`}>
                 <span className="w-7 shrink-0 font-bold">{String(index + 1).padStart(2, "0")}</span>
                 <span className="line-clamp-2">{q.question}</span>
@@ -134,28 +180,41 @@ export default function FootballQuizTemplatePage() {
         </section>
 
         <section className="space-y-4">
-          <div className="overflow-hidden rounded-2xl border border-[#3D4C50] bg-[#081723] p-4 text-[#F5F5F2] sm:p-8">
-            <div className="flex items-center justify-between border-b border-[#394C55] pb-4">
-              <p className="flex items-center gap-2 text-sm font-bold tracking-widest text-[#EDC16E]"><Trophy size={18}/> FOOTBALL LEGENDS</p>
-              <p className="text-xs text-[#AAB9C7]">QUESTION {String(selected + 1).padStart(2,"0")} / {quiz?.questions.length ?? "—"}</p>
+          <div className="space-y-3 rounded-2xl border border-border bg-panel p-3 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-text">Champions Gold — Scene Preview</p>
+                <p className="text-xs text-muted">Frame-based browser preview. This is not an MP4 export.</p>
+              </div>
+              <span className="rounded-full border border-[#b69454]/50 bg-[#ab8a4b]/10 px-3 py-1 text-xs font-semibold text-[#f0c87d]">
+                {scene ? readableQuizPhase(scene.phase.kind) : "Awaiting quiz"}
+              </span>
             </div>
-            <div className="mx-auto flex min-h-[175px] max-w-2xl flex-col items-center justify-center gap-3 text-center sm:min-h-[240px]">
-              <span className="rounded-full border border-[#A78244] bg-[#B9944B]/15 px-3 py-1 text-[10px] font-semibold tracking-widest text-[#EDC16E]">{question?.type.replace("_"," ").toUpperCase() ?? "WHO AM I?"}</span>
-              <h2 className="font-sora text-xl font-extrabold sm:text-3xl">{question?.question ?? "Choose a question"}</h2>
-              {question?.clues.length ? <p className="text-xs text-[#B5C6D2]">{question.clues.join("  •  ")}</p> : null}
+            <ChampionsGoldScene
+              question={liveQuestion}
+              questionIndex={liveQuestionIndex}
+              questionCount={quiz?.questions.length ?? 20}
+              phase={scene?.phase.kind ?? "intro"}
+              progress={scene?.progress ?? 0}
+              remainingSeconds={scene?.remainingSeconds ?? 0}
+              title={quiz?.settings.title ?? "Football Legends Quiz"}
+            />
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label={playing ? "Pause preview" : "Play preview"} disabled={!timeline} onClick={() => {
+                if (timeline && previewFrame >= timeline.totalFrames - 1) setPreviewFrame(0);
+                setPlaying((value) => !value);
+              }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#D8AE64] text-[#11202C] disabled:opacity-40">
+                {playing ? <Pause size={17}/> : <Play size={17}/>}
+              </button>
+              <button type="button" aria-label="Restart preview" disabled={!timeline} onClick={() => {setPlaying(false);setPreviewFrame(0);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border text-text disabled:opacity-40"><RotateCcw size={15}/></button>
+              <input aria-label="Scrub quiz timeline" type="range" min={0} max={Math.max(1,(timeline?.totalFrames ?? 1)-1)} step={1} value={Math.min(previewFrame,Math.max(0,(timeline?.totalFrames ?? 1)-1))}
+                onChange={(event)=>{setPlaying(false);setPreviewFrame(Number(event.target.value));}}
+                className="min-w-0 flex-1 accent-[#D8AE64]" disabled={!timeline}/>
+              <span className="min-w-[90px] text-right text-xs font-semibold tabular-nums text-text">{clock(previewSeconds)} / {clock(timeline?.totalSeconds ?? 0)}</span>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              {question?.options.map((value, index) => (
-                <div key={index} className="flex items-center gap-3 rounded-xl border border-[#466174] bg-[#162D40] p-3 text-sm">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#D8AB59] text-xs font-extrabold text-[#172231]">{String.fromCharCode(65+index)}</span>
-                  <span>{value}</span>
-                </div>
-              ))}
-            </div>
-            <div className="mt-5 flex items-center justify-between gap-4">
-              <div className="flex flex-1 items-center gap-3"><Clock3 size={18} className="text-[#EDC16E]"/><div className="h-2 flex-1 rounded-full bg-[#4C5D6A]"><div className="h-full w-3/4 rounded-full bg-[#E1B45B]"/></div></div>
-              <span className="font-bold text-[#EDC16E]">{question?.thinkTimeSec ?? 10}s</span>
-            </div>
+            <p className="text-xs leading-relaxed text-muted">
+              Seek through the intro, clues, countdown, suspense, reveal and halftime scenes. Playback is silent; future milestones add polished motion and synced audio.
+            </p>
           </div>
 
           <div className="rounded-xl border border-border bg-panel p-4">
@@ -195,7 +254,7 @@ export default function FootballQuizTemplatePage() {
 
       <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-xs leading-relaxed text-muted">
         <Film className="mr-2 inline-block text-accent" size={16}/>
-        <strong className="text-text">QUIZ-001 foundation:</strong> This is the editable quiz data and timeline preview, not an exported video. Frame-based animations, sound, and final MP4 rendering are upcoming QUIZ-002 through QUIZ-005 milestones.
+        <strong className="text-text">QUIZ-001 foundation:</strong> The new Champions Gold visual preview is driven by the frame timeline. Final motion rendering, sound, and playable MP4 export remain the upcoming QUIZ-003 through QUIZ-005 milestones.
       </div>
     </div>
   );
