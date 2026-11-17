@@ -16,6 +16,7 @@ import {
   CalendarClock,
   Film,
   Bot,
+  Trophy,
   Server,
   ServerCrash,
   PanelLeftClose,
@@ -26,6 +27,7 @@ import { useAppStore } from "@/store/useAppStore";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/create", label: "Create Video", icon: Clapperboard },
+  { href: "/templates", label: "Video Templates", icon: Trophy },
   { href: "/images", label: "Bulk Images", icon: Images },
   { href: "/bulk", label: "Bulk Videos", icon: Layers },
   { href: "/audio", label: "Audio Library", icon: Music2 },
