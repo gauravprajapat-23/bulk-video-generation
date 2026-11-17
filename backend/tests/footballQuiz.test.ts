@@ -46,5 +46,5 @@ test("invalid CSV headers, duplicate answers, question IDs and bad countdowns ar
   assert.throws(() => parseFootballQuizCsv(sample.replace("q02,award", "q01,award")), /repeated question ID/);
   assert.throws(() => parseFootballQuizCsv(sample.replace("q01,player_clue", "q01,unknown")), /Invalid question type/);
   assert.throws(() => parseFootballQuizCsv(sample.replace("Lionel Messi,Ángel Di María", "Lionel Messi,Lionel Messi")), /Four distinct/);
-  assert.throws(() => parseFootballQuizCsv(sample.replace("10,easy", "31,easy")), /Countdown/);
+  assert.throws(() => parseFootballQuizCsv(sample.replace(",10,,,", ",31,,,")), /Countdown/);
 });
