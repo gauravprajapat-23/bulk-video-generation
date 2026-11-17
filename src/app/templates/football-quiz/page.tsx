@@ -276,7 +276,7 @@ export default function FootballQuizTemplatePage() {
             <p className="mt-1 text-xs text-muted">1920 × 1080 · 30 FPS · H.264 · Guest download. The backend must explicitly enable guest rendering.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={()=>{void requestMp4();}} disabled={!timeline || renderBusy || !!renderJob && ["queued","rendering"].includes(renderJob.status)}
+            <button type="button" onClick={()=>{void requestMp4();}} disabled={!timeline || !apiBase || renderBusy || (!!renderJob && ["queued","rendering"].includes(renderJob.status))}
               className="rounded-lg bg-[#D5AA61] px-4 py-2 text-sm font-bold text-[#182333] disabled:cursor-not-allowed disabled:opacity-50">
               {renderBusy?"Starting…":"Render MP4"}
             </button>
@@ -293,7 +293,7 @@ export default function FootballQuizTemplatePage() {
           {renderJob.error&&<p className="text-xs text-red-300">{renderJob.error}</p>}
         </div>}
         <p className="mt-3 text-xs text-muted">
-          Voice narration needs a timed, prepared audio track because browser speech cannot be muxed into MP4.
+          {!apiBase ? "Set NEXT_PUBLIC_API_BASE_URL to the backend API endpoint. " : ""}Voice narration needs a timed, prepared audio track because browser speech cannot be muxed into MP4.
           Uploaded music/narration is temporary; the download expires after 15 minutes. Guest render limit: one job globally, two attempts per IP per hour.
         </p>
       </div>
