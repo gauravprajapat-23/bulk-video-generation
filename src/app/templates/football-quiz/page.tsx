@@ -80,8 +80,8 @@ export default function FootballQuizTemplatePage() {
 
   function setLocalMusic(file?: File) {
     if (!file) return;
-    if (file.size > 30 * 1024 * 1024 || !["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-wav"].includes(file.type)) {
-      setError("Choose an MP3, WAV, OGG or M4A file up to 30 MB.");
+    if (file.size > 12 * 1024 * 1024 || !["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-wav"].includes(file.type)) {
+      setError("Choose an MP3, WAV, OGG or M4A file up to 12 MB.");
       return;
     }
     setError("");
@@ -121,7 +121,7 @@ export default function FootballQuizTemplatePage() {
       if (audioSettings.voiceEnabled && !narrationFile) throw new Error("Choose a prepared full-length narration file, or disable narration for MP4 export");
       if (audioSettings.musicEnabled && !musicFile) throw new Error("Choose a music file before exporting");
       const data = new FormData();
-      data.set("quiz", JSON.stringify(quiz));
+      data.set("quiz", JSON.stringify({...quiz,settings:{...quiz.settings,voiceover:audioSettings.enabled&&audioSettings.voiceEnabled}}));
       data.set("audio", JSON.stringify({
         musicEnabled: audioSettings.enabled && audioSettings.musicEnabled,
         effectsEnabled: audioSettings.enabled && audioSettings.effectsEnabled,
@@ -328,7 +328,7 @@ export default function FootballQuizTemplatePage() {
                 if (quiz) setQuiz({...quiz,settings:{...quiz.settings,voiceover:e.target.checked}});
               }}/> Browser narration (preview only)
             </label>
-            <label className="block space-y-1 text-xs text-muted">Background music (user-supplied, max 30 MB)
+            <label className="block space-y-1 text-xs text-muted">Background music (user-supplied, max 12 MB)
               <input type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,.mp3,.wav,.ogg,.m4a" aria-label="Choose background music"
                 onChange={(e)=>{setLocalMusic(e.target.files?.[0]);e.target.value="";}} className="block w-full text-xs text-text file:mr-2 file:rounded file:border-0 file:bg-panel2 file:px-2 file:py-1 file:text-text"/>
             </label>
