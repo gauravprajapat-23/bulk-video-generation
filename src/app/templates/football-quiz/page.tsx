@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Download, Film, FileUp, ShieldCheck, Play, Pause, RotateCcw } from "lucide-react";
 import { ChampionsGoldScene } from "@/components/quiz/ChampionsGoldScene";
+import { useFootballQuizAudioPreview } from "@/hooks/useFootballQuizAudioPreview";
+import {
+  DEFAULT_QUIZ_AUDIO_SETTINGS, compileQuizAudioCues,
+  type QuizAudioSettings,
+} from "@/lib/footballQuizAudio";
 import { locateFootballQuizFrame, readableQuizPhase } from "@/lib/footballQuizPlayback";
 import {
   compileFootballQuizTimeline,
@@ -25,6 +30,9 @@ export default function FootballQuizTemplatePage() {
   const [loading, setLoading] = useState(true);
   const [previewFrame, setPreviewFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
+  const [audioSettings, setAudioSettings] = useState<QuizAudioSettings>(DEFAULT_QUIZ_AUDIO_SETTINGS);
+  const [musicUrl, setMusicUrl] = useState<string | null>(null);
+  const [musicName, setMusicName] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -48,6 +56,36 @@ export default function FootballQuizTemplatePage() {
   }, [quiz]);
 
   const scene = useMemo(() => timeline ? locateFootballQuizFrame(timeline, previewFrame) : null, [timeline, previewFrame]);
+
+  const audioCues = useMemo(
+    () => quiz && timeline ? compileQuizAudioCues(quiz, timeline, audioSettings) : [],
+    [quiz, timeline, audioSettings],
+  );
+  useFootballQuizAudioPreview({
+    playing, frame: previewFrame, timeline, cues: audioCues, settings: audioSettings, musicUrl,
+  });
+
+  useEffect(() => () => {
+    if (musicUrl) URL.revokeObjectURL(musicUrl);
+  }, [musicUrl]);
+
+  function updateAudioSettings(patch: Partial<QuizAudioSettings>) {
+    setAudioSettings((current) => ({ ...current, ...patch }));
+  }
+
+  function setLocalMusic(file?: File) {
+    if (!file) return;
+    if (file.size > 30 * 1024 * 1024 || !["audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "audio/x-wav"].includes(file.type)) {
+      setError("Choose an MP3, WAV, OGG or M4A file up to 30 MB.");
+      return;
+    }
+    setError("");
+    setPlaying(false);
+    const url = URL.createObjectURL(file);
+    setMusicUrl(url);
+    setMusicName(file.name);
+    updateAudioSettings({ enabled: true, musicEnabled: true });
+  }
 
   useEffect(() => {
     if (!timeline || !playing) return;
@@ -105,7 +143,7 @@ export default function FootballQuizTemplatePage() {
     if (!quiz || !timeline) return;
     try {
       const compiled = compileFootballQuizTimeline(quiz);
-      const blob = new Blob([JSON.stringify({ ...quiz, timeline: compiled }, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify({ ...quiz, timeline: compiled, audio: { settings: audioSettings, cues: audioCues, musicFilename: musicName, musicEmbedded: false } }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -162,14 +200,52 @@ export default function FootballQuizTemplatePage() {
               <input aria-label="Import quiz CSV" type="file" accept=".csv,text/csv" className="hidden" onChange={(e) => { void handleUpload(e.target.files?.[0]); e.target.value = ""; }}/>
             </label>
             <p className="mt-2 text-xs leading-relaxed text-muted">Accepts 5–50 validated questions. Changing the CSV replaces this draft only.</p>
-            <label className="mt-4 flex items-center gap-2 text-xs text-text">
-              <input type="checkbox" checked={voiceover} onChange={(e) => {
-                const checked = e.target.checked;
-                setVoiceover(checked);
-                if (quiz) setQuiz({ ...quiz, settings: { ...quiz.settings, voiceover: checked } });
-              }}/>
-              Optional narration (requires audio setup in QUIZ-004)
+            <p className="mt-3 text-xs leading-relaxed text-muted">Optional narration and sound can be configured below. No login required.</p>
+          </div>
+          <div className="space-y-3 rounded-xl border border-border bg-panel p-4">
+            <h2 className="text-sm font-semibold text-text">Professional audio preview</h2>
+            <p className="text-xs text-muted">Synthetic original cue sounds, optional browser voice and your own background music. Audio is not included in MP4 until QUIZ-005.</p>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input type="checkbox" checked={audioSettings.enabled} onChange={(e)=>updateAudioSettings({enabled:e.target.checked})}/> Enable preview sound
             </label>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input type="checkbox" disabled={!audioSettings.enabled} checked={audioSettings.ticksEnabled} onChange={(e)=>updateAudioSettings({ticksEnabled:e.target.checked})}/> Countdown ticks
+            </label>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input type="checkbox" disabled={!audioSettings.enabled} checked={audioSettings.effectsEnabled} onChange={(e)=>updateAudioSettings({effectsEnabled:e.target.checked})}/> Intro, suspense and reveal effects
+            </label>
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input type="checkbox" disabled={!audioSettings.enabled} checked={audioSettings.voiceEnabled} onChange={(e)=>{
+                updateAudioSettings({voiceEnabled:e.target.checked});
+                setVoiceover(e.target.checked);
+                if (quiz) setQuiz({...quiz,settings:{...quiz.settings,voiceover:e.target.checked}});
+              }}/> Browser narration (preview only)
+            </label>
+            <label className="block space-y-1 text-xs text-muted">Background music (user-supplied, max 30 MB)
+              <input type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,.mp3,.wav,.ogg,.m4a" aria-label="Choose background music"
+                onChange={(e)=>{setLocalMusic(e.target.files?.[0]);e.target.value="";}} className="block w-full text-xs text-text file:mr-2 file:rounded file:border-0 file:bg-panel2 file:px-2 file:py-1 file:text-text"/>
+            </label>
+            {musicName && <div className="flex items-center justify-between gap-2 text-xs text-muted"><span className="truncate">{musicName}</span>
+              <button type="button" className="text-red-300 hover:underline" onClick={()=>{setPlaying(false);setMusicUrl(null);setMusicName(null);updateAudioSettings({musicEnabled:false});}}>Remove</button>
+            </div>}
+            <label className="flex items-center gap-2 text-xs text-text">
+              <input type="checkbox" disabled={!audioSettings.enabled || !musicUrl} checked={audioSettings.musicEnabled} onChange={(e)=>updateAudioSettings({musicEnabled:e.target.checked})}/> Play background music
+            </label>
+            {([
+              ["effectsVolume", "Effects"], ["musicVolume", "Music"], ["voiceVolume", "Narration"], ["ducking", "Music under narration"],
+            ] as const).map(([field,label])=>(
+              <label key={field} className="block space-y-1 text-xs text-muted">
+                <span className="flex justify-between gap-2"><span>{label}</span><span>{Math.round(audioSettings[field]*100)}%</span></span>
+                <input type="range" min={0} max={1} step={0.05} value={audioSettings[field]}
+                  onChange={(e)=>updateAudioSettings({[field]:Number(e.target.value)})} aria-label={label}
+                  className="w-full"/>
+              </label>
+            ))}
+            <label className="block space-y-1 text-xs text-muted">Narration speed: {audioSettings.narrationRate.toFixed(1)}×
+              <input type="range" min={0.7} max={1.3} step={0.1} value={audioSettings.narrationRate}
+                onChange={(e)=>updateAudioSettings({narrationRate:Number(e.target.value)})} aria-label="Narration speed" className="w-full"/>
+            </label>
+            <p className="text-xs text-muted">Compiled audio cues: {audioCues.length}. Export JSON includes the audio cue schedule and settings, but not your local music file.</p>
           </div>
           <div className="max-h-[480px] overflow-auto rounded-xl border border-border bg-panel p-3">
             <h2 className="mb-2 px-2 text-xs font-bold uppercase tracking-wider text-muted">Questions</h2>
@@ -217,7 +293,7 @@ export default function FootballQuizTemplatePage() {
               <span className="min-w-[90px] text-right text-xs font-semibold tabular-nums text-text">{clock(previewSeconds)} / {clock(timeline?.totalSeconds ?? 0)}</span>
             </div>
             <p className="text-xs leading-relaxed text-muted">
-              Seek through the intro, clues, countdown, suspense, reveal and halftime scenes. Playback is silent; future milestones add polished motion and synced audio.
+              Seek through the intro, clues, countdown, suspense, reveal and halftime scenes. Enable sound in the audio panel to preview cue effects, optional narration and user-supplied music. Browser speech timing is approximate; MP4 audio embedding is pending.
             </p>
           </div>
 
@@ -258,7 +334,7 @@ export default function FootballQuizTemplatePage() {
 
       <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-xs leading-relaxed text-muted">
         <Film className="mr-2 inline-block text-accent" size={16}/>
-        <strong className="text-text">QUIZ-001 foundation:</strong> The new Champions Gold visual preview is driven by the frame timeline. Final motion rendering, sound, and playable MP4 export remain the upcoming QUIZ-003 through QUIZ-005 milestones.
+        <strong className="text-text">QUIZ-001 foundation:</strong> The new Champions Gold visual preview is driven by the frame timeline. Audio cue timing is now compiled from the same video frames. Browser audio preview is optional; final mixed audio and playable MP4 export remain QUIZ-005.
       </div>
     </div>
   );
