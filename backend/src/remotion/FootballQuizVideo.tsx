@@ -129,11 +129,13 @@ type QuizToneCue = {key:string;from:number;type:"intro"|"tick"|"urgent"|"suspens
 
 export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
   const voiceActive=audio.narrationData!==null;
+  const narrationSlots=timeline.phases.filter(p=>["entrance","clues","reveal"].includes(p.kind));
   return <AbsoluteFill>
     <QuizFrame quiz={quiz} timeline={timeline}/>
     {audio.musicData && <Audio src={audio.musicData} loop volume={f=>{
       const fade=Math.min(1,f/60,(timeline.totalFrames-f)/60);
-      return Math.max(0,fade)*audio.musicVolume*(voiceActive?audio.ducking:1);
+      const narrationSlot=voiceActive&&narrationSlots.some(p=>f>=p.startFrame&&f<p.endFrame);
+      return Math.max(0,fade)*audio.musicVolume*(narrationSlot?audio.ducking:1);
     }}/>}
     {audio.narrationData&&<Audio src={audio.narrationData} volume={audio.voiceVolume}/>}
     {timeline.phases.flatMap((phase):QuizToneCue[]=>{
