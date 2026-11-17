@@ -52,33 +52,11 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 
-/* QUIZ-002: scoped preview polish. No external player art or unlicensed assets. */
-@keyframes quiz-gold-light-sweep {
-  0%, 100% { opacity: .5; transform: translateX(-4%) rotate(-25deg); }
-  50% { opacity: .9; transform: translateX(6%) rotate(-20deg); }
-}
-@keyframes quiz-gold-reveal-in {
-  from { opacity: 0; transform: translateY(10px) scale(.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes quiz-gold-player-glow {
-  0%, 100% { box-shadow: inset 0 0 28px #081522; }
-  50% { box-shadow: inset 0 0 22px #081522, 0 0 26px rgba(232,185,97,.34); }
-}
-.quiz-gold-scene .quiz-gold-light { animation: quiz-gold-light-sweep 7s ease-in-out infinite alternate; }
-.quiz-gold-scene .quiz-gold-light-right { animation-delay: -3.5s; animation-direction: alternate-reverse; }
-.quiz-gold-scene[data-phase="entrance"] .quiz-gold-question,
-.quiz-gold-scene[data-phase="intro"] .quiz-gold-title,
-.quiz-gold-scene[data-phase="halftime"] .quiz-gold-title,
-.quiz-gold-scene[data-phase="outro"] .quiz-gold-title,
-.quiz-gold-scene[data-phase="reveal"] .quiz-gold-reveal {
-  animation: quiz-gold-reveal-in 450ms ease-out both;
-}
-.quiz-gold-scene[data-phase="reveal"] .quiz-gold-player { animation: quiz-gold-player-glow 1.5s ease-in-out infinite; }
-@media (prefers-reduced-motion: reduce) {
-  .quiz-gold-scene .quiz-gold-light,
-  .quiz-gold-scene .quiz-gold-title,
-  .quiz-gold-scene .quiz-gold-question,
-  .quiz-gold-scene .quiz-gold-reveal,
-  .quiz-gold-scene .quiz-gold-player { animation: none !important; transition: none !important; }
+
+/* QUIZ-003: all Champions Gold motion is derived from the requested
+   frame in footballQuizMotion.ts. No independent CSS animation clocks. */
+.quiz-gold-scene,
+.quiz-gold-scene * {
+  animation: none !important;
+  transition: none !important;
 }
