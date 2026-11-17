@@ -8,6 +8,17 @@ import {
 import { parseRenderQuiz,validateGuestMusic } from "../services/quizRenderValidation";
 
 const router=Router();
+const allowedOrigins=(process.env.ALLOWED_ORIGINS ||
+  (process.env.NODE_ENV==="production"?"":"http://localhost:3000,http://localhost:3001"))
+  .split(",").map(x=>x.trim()).filter(Boolean);
+const requireAllowedOrigin=(req:Request,res:Response,next:()=>void)=>{
+  const origin=req.get("origin");
+  if(!origin||!allowedOrigins.includes(origin)){
+    res.status(403).json({error:"Guest render requires an approved website origin"});
+    return;
+  }
+  next();
+};
 const upload=multer({
   storage:multer.memoryStorage(),
   limits:{files:2,fileSize:12*1024*1024,fields:2,fieldSize:90*1024},
@@ -18,7 +29,7 @@ const isEnabled=(_req:Request,res:Response,next:()=>void)=>{
 };
 router.use(isEnabled);
 
-router.post("/jobs",upload.fields([{name:"music",maxCount:1},{name:"narration",maxCount:1}]),(req:Request,res:Response)=>{
+router.post("/jobs",requireAllowedOrigin,upload.fields([{name:"music",maxCount:1},{name:"narration",maxCount:1}]),(req:Request,res:Response)=>{
   try {
     const quizText=req.body.quiz;
     const settingsText=req.body.audio;
