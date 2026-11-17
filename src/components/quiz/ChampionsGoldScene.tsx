@@ -14,8 +14,6 @@ export interface ChampionsGoldSceneProps {
   title: string;
 }
 
-const ANSWER_KEYS = ["A", "B", "C", "D"] as const;
-
 function StadiumBackdrop({ x, opacity }: { x: number; opacity: number }) {
   return (
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
@@ -33,7 +31,7 @@ function StadiumBackdrop({ x, opacity }: { x: number; opacity: number }) {
 
 function PlayerSilhouette({ revealed }: { revealed: boolean }) {
   return (
-    <div aria-label={revealed ? "Player identity revealed" : "Mystery player silhouette"} className="quiz-gold-player relative mx-auto flex aspect-[4/3] w-full max-w-[240px] items-end justify-center overflow-hidden rounded-2xl border border-[#c4a05e]/40 bg-[#112a3a] shadow-[inset_0_0_35px_#06121d]">
+    <div aria-label={revealed ? "Answer phase: stylized silhouette, player photo not available" : "Mystery player silhouette"} className="quiz-gold-player relative mx-auto flex aspect-[4/3] w-full max-w-[240px] items-end justify-center overflow-hidden rounded-2xl border border-[#c4a05e]/40 bg-[#112a3a] shadow-[inset_0_0_35px_#06121d]">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_25%,rgba(235,186,93,0.2),transparent_60%)]"/>
       <svg viewBox="0 0 320 240" className="relative w-full" role="img" aria-label="Generic player silhouette, not an actual player photo">
         <ellipse cx="160" cy="75" rx="39" ry="44" fill="#06111d" stroke="#d5ae60" strokeOpacity=".25" strokeWidth="2"/>
@@ -111,7 +109,7 @@ export function ChampionsGoldScene({ question, questionIndex, questionCount, pha
                     const key = ["A", "B", "C", "D"][i];
                     const correct = question?.correctOption === key;
                     return (
-                      <div key={key} style={{ opacity: revealed && !correct ? .38 : motion.optionOpacity, transform: `translateY(${motion.optionOffsetY}px)`, boxShadow: revealed && correct ? `0 0 ${Math.round(motion.revealOpacity * 28)}px rgba(80,225,144,.35)` : undefined }}
+                      <div key={key} style={{ opacity: revealed && !correct ? 1 - .62 * motion.revealOpacity : motion.optionOpacity, transform: `translateY(${motion.optionOffsetY}px)`, boxShadow: revealed && correct ? `0 0 ${Math.round(motion.revealOpacity * 28)}px rgba(80,225,144,.35)` : undefined }}
                         className={`flex min-h-[clamp(34px,5vw,78px)] items-center gap-[4%] rounded-lg border p-[4%] ${revealed && correct
                           ? "border-[#66dd9d] bg-[#176744]"
                           : revealed ? "border-[#344859] bg-[#122437]/65"
