@@ -4,7 +4,7 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { bundle } from "@remotion/bundler";
-import { makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
+import { getVideoMetadata, makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
 import type { QuizRenderProps } from "../remotion/FootballQuizVideo";
 import type { RenderQuiz, RenderQuizTimeline } from "./quizRenderValidation";
 
@@ -14,6 +14,7 @@ export interface GuestRenderJob {
   ip: string;
   status: GuestRenderStatus;
   progress: number;
+  durationSeconds: number | null;
   createdAt: number;
   updatedAt: number;
   output: string | null;
@@ -41,7 +42,7 @@ export function getGuestRenderJob(id: string): GuestRenderJob|undefined {
 }
 export function publicRenderJob(job: GuestRenderJob) {
   return {id:job.id,status:job.status,progress:job.progress,error:job.error,
-    durationSeconds:undefined,downloadAvailable:job.status==="completed"&&Boolean(job.output)};
+    durationSeconds:job.durationSeconds,downloadAvailable:job.status==="completed"&&Boolean(job.output)};
 }
 function expireJob(job: GuestRenderJob) {
   jobs.delete(job.id);
@@ -86,7 +87,7 @@ export function reserveGuestRender(ip:string): GuestRenderJob {
   windowRate.count++;
   attempts.set(ip,windowRate);
   const id=crypto.randomBytes(24).toString("hex");
-  const job:GuestRenderJob={id,ip,status:"queued",progress:0,createdAt:now,updatedAt:now,
+  const job:GuestRenderJob={id,ip,status:"queued",progress:0,durationSeconds:null,createdAt:now,updatedAt:now,
     output:null,temporaryDir:null,error:null,cancel:()=>{}};
   jobs.set(id,job);
   activeJob=id;
@@ -129,6 +130,16 @@ export async function runGuestRender(
     });
     const stat=await fsp.stat(target);
     if(stat.size<1024) throw new Error("Rendered MP4 file is empty");
+    const metadata=await getVideoMetadata(target);
+    const expectedDuration=timeline.totalFrames/timeline.fps;
+    if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
+      Math.abs(metadata.fps-30)>.2 ||
+      !Number.isFinite(metadata.durationInSeconds) || Math.abs(metadata.durationInSeconds-expectedDuration)>.25) {
+      throw new Error("Rendered file failed FPS, dimensions, codec or duration integrity gate");
+    }
+    if((audioConfig.effectsEnabled || audioConfig.ticksEnabled || audioConfig.musicEnabled || audioConfig.voiceEnabled) &&
+      !metadata.audioCodec) throw new Error("Audio tracks requested but MP4 has no audio stream");
+    job.durationSeconds=metadata.durationInSeconds;
     if(job.status==="cancelled") {await fsp.rm(target,{force:true});return;}
     job.output=target;job.progress=100;job.status="completed";
   } catch(err) {
