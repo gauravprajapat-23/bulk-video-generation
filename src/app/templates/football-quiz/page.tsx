@@ -326,6 +326,11 @@ export default function FootballQuizTemplatePage() {
                 <label className="block space-y-1 text-xs text-muted">Reveal explanation
                   <textarea value={question.explanation} onChange={(e)=>updateQuestion(selected,{explanation:e.target.value})} rows={2} className="w-full rounded-lg border border-border bg-bg p-2 text-sm text-text"/>
                 </label>
+                <label className="block space-y-1 text-xs text-muted">Question voiceover text (optional)
+                  <textarea value={question.narration ?? ""} onChange={(e)=>updateQuestion(selected,{narration:e.target.value || null})} rows={2}
+                    placeholder="Leave blank to narrate the question exactly as written"
+                    className="w-full rounded-lg border border-border bg-bg p-2 text-sm text-text"/>
+                </label>
               </div>
             )}
           </div>
