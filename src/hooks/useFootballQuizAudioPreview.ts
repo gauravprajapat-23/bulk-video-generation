@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import type { FootballQuizAudioSettings, QuizAudioCue } from "@/lib/footballQuizAudio";
+import type { QuizAudioSettings, QuizAudioCue } from "@/lib/footballQuizAudio";
 import { cuesBetweenFrames, musicGainAtFrame } from "@/lib/footballQuizAudio";
 import type { FootballQuizTimeline } from "@/lib/footballQuiz";
 
@@ -17,7 +17,7 @@ export function useFootballQuizAudioPreview({
   frame: number;
   timeline: FootballQuizTimeline | null;
   cues: readonly QuizAudioCue[];
-  settings: FootballQuizAudioSettings;
+  settings: QuizAudioSettings;
   musicUrl: string | null;
 }): void {
   const contextRef = useRef<AudioContext | null>(null);
