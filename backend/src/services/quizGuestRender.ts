@@ -71,7 +71,7 @@ const tones:Record<string,string>={
 
 async function getBundledQuiz(): Promise<string> {
   if(!bundlePromise) {
-    const entry=path.resolve(process.cwd(),"src/remotion/quizEntry.tsx");
+    const entry=path.resolve(__dirname,"../../src/remotion/quizEntry.tsx");
     if(!fs.existsSync(entry)) throw new Error("Remotion quiz source is missing from backend deployment");
     bundlePromise=bundle({entryPoint:entry}).catch(err=>{bundlePromise=null;throw err;});
   }
