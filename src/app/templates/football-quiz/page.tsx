@@ -152,17 +152,17 @@ export default function FootballQuizTemplatePage() {
     } catch (err) { setError(err instanceof Error ? err.message : "Unable to cancel render"); }
   }
 
-  async function downloadMp4() {
+  function downloadMp4() {
     if (!renderJob || !apiBase || renderJob.status!=="completed") return;
-    try {
-      const response = await fetch(`${apiBase}/quiz-render/jobs/${renderJob.id}/download`, {cache:"no-store"});
-      if (!response.ok) throw new Error("MP4 expired or download unavailable");
-      const blob = await response.blob();
-      if (!blob.size || !blob.type.includes("mp4")) throw new Error("Invalid MP4 response");
-      const url=URL.createObjectURL(blob);
-      const a=document.createElement("a");a.href=url;a.download="football-legends-quiz.mp4";a.click();
-      window.setTimeout(()=>URL.revokeObjectURL(url),30_000);
-    } catch (err) {setError(err instanceof Error?err.message:"Download failed");}
+    // Stream directly from the server. Avoid loading a potentially multi-GB MP4
+    // into browser memory via Response.blob().
+    const link=document.createElement("a");
+    link.href=`${apiBase}/quiz-render/jobs/${renderJob.id}/download`;
+    link.rel="noreferrer";
+    link.download="football-legends-quiz.mp4";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
   }
 
   useEffect(() => {
@@ -282,7 +282,7 @@ export default function FootballQuizTemplatePage() {
             </button>
             {renderJob && ["queued","rendering"].includes(renderJob.status)&&<button type="button" onClick={()=>{void cancelMp4();}}
               className="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-300">Cancel render</button>}
-            {renderJob?.status==="completed"&&<button type="button" onClick={()=>{void downloadMp4();}}
+            {renderJob?.status==="completed"&&<button type="button" onClick={downloadMp4}
               className="rounded-lg border border-emerald-500/50 px-4 py-2 text-sm font-semibold text-emerald-300">Download MP4</button>}
           </div>
         </div>
