@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getBackendToken } from "@/lib/backendClient";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -42,6 +44,10 @@ interface SidebarProps {
 export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const backend = useAppStore((s) => s.backend);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    setSignedIn(Boolean(getBackendToken()));
+  }, [pathname, backend.connected]);
 
   return (
     <aside
@@ -111,6 +117,28 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
         )}
       >
       
+
+        {!collapsed && (
+          <div className="mb-3 rounded-lg border border-border bg-panel2 px-3 py-2.5">
+            {signedIn ? (
+              <p className="text-xs font-medium text-text">Signed in</p>
+            ) : (
+              <>
+                <p className="text-xs font-semibold text-text">Guest mode</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                  Create and download videos without signing in. Files stay in this browser.
+                </p>
+                <Link
+                  href="/login"
+                  onClick={onNavigate}
+                  className="mt-2 inline-block text-xs font-semibold text-accent hover:underline"
+                >
+                  Sign in with Google (optional)
+                </Link>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Legal links */}
         <div
