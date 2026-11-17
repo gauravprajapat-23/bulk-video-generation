@@ -33,6 +33,11 @@ export default function FootballQuizTemplatePage() {
   const [audioSettings, setAudioSettings] = useState<QuizAudioSettings>(DEFAULT_QUIZ_AUDIO_SETTINGS);
   const [musicUrl, setMusicUrl] = useState<string | null>(null);
   const [musicName, setMusicName] = useState<string | null>(null);
+  const [musicFile, setMusicFile] = useState<File | null>(null);
+  const [narrationFile, setNarrationFile] = useState<File | null>(null);
+  const [renderJob, setRenderJob] = useState<{id:string;status:string;progress:number;error:string|null;downloadAvailable:boolean}|null>(null);
+  const [renderBusy, setRenderBusy] = useState(false);
+  const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   useEffect(() => {
     let active = true;
@@ -84,7 +89,80 @@ export default function FootballQuizTemplatePage() {
     const url = URL.createObjectURL(file);
     setMusicUrl(url);
     setMusicName(file.name);
+    setMusicFile(file);
     updateAudioSettings({ enabled: true, musicEnabled: true });
+  }
+
+  useEffect(() => {
+    if (!renderJob?.id || !apiBase || ["completed", "failed", "cancelled"].includes(renderJob.status)) return;
+    let mounted = true;
+    const check = async () => {
+      try {
+        const response = await fetch(`${apiBase}/quiz-render/jobs/${renderJob.id}`, {cache:"no-store"});
+        if (!response.ok) throw new Error("Render status unavailable");
+        const result = await response.json();
+        if (mounted) setRenderJob(result);
+      } catch (err) {
+        if (mounted) setError(err instanceof Error ? err.message : "Render status failed");
+      }
+    };
+    const handle = window.setInterval(() => { void check(); }, 1600);
+    return () => { mounted=false;window.clearInterval(handle); };
+  }, [renderJob?.id, renderJob?.status, apiBase]);
+
+  async function requestMp4() {
+    if (!quiz || !timeline || !apiBase || renderBusy) return;
+    setError("");
+    setPlaying(false);
+    setRenderBusy(true);
+    try {
+      const valid = compileFootballQuizTimeline(quiz);
+      if (valid.totalFrames > 30 * 60 * 12 || quiz.questions.length > 20) throw new Error("Guest MP4 supports up to 20 questions and 12 minutes");
+      if (audioSettings.voiceEnabled && !narrationFile) throw new Error("Choose a prepared full-length narration file, or disable narration for MP4 export");
+      if (audioSettings.musicEnabled && !musicFile) throw new Error("Choose a music file before exporting");
+      const data = new FormData();
+      data.set("quiz", JSON.stringify(quiz));
+      data.set("audio", JSON.stringify({
+        musicEnabled: audioSettings.enabled && audioSettings.musicEnabled,
+        effectsEnabled: audioSettings.enabled && audioSettings.effectsEnabled,
+        ticksEnabled: audioSettings.enabled && audioSettings.ticksEnabled,
+        voiceEnabled: audioSettings.enabled && audioSettings.voiceEnabled,
+        musicVolume: audioSettings.musicVolume, effectsVolume: audioSettings.effectsVolume,
+        voiceVolume: audioSettings.voiceVolume, ducking: audioSettings.ducking,
+      }));
+      if (audioSettings.enabled && audioSettings.musicEnabled && musicFile) data.set("music", musicFile);
+      if (audioSettings.enabled && audioSettings.voiceEnabled && narrationFile) data.set("narration", narrationFile);
+      const response = await fetch(`${apiBase}/quiz-render/jobs`, {method:"POST",body:data});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `Render request failed: ${response.status}`);
+      setRenderJob(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to render MP4");
+    } finally {
+      setRenderBusy(false);
+    }
+  }
+
+  async function cancelMp4() {
+    if (!renderJob || !apiBase) return;
+    try {
+      const response = await fetch(`${apiBase}/quiz-render/jobs/${renderJob.id}`, {method:"DELETE"});
+      if (!response.ok) throw new Error("Unable to cancel render");
+      setRenderJob(await response.json());
+    } catch (err) { setError(err instanceof Error ? err.message : "Unable to cancel render"); }
+  }
+
+  async function downloadMp4() {
+    if (!renderJob || !apiBase || renderJob.status!=="completed") return;
+    try {
+      const response = await fetch(`${apiBase}/quiz-render/jobs/${renderJob.id}/download`, {cache:"no-store"});
+      if (!response.ok) throw new Error("MP4 expired or download unavailable");
+      const blob = await response.blob();
+      if (!blob.size || !blob.type.includes("mp4")) throw new Error("Invalid MP4 response");
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");a.href=url;a.download="football-legends-quiz.mp4";a.click();
+      window.setTimeout(()=>URL.revokeObjectURL(url),30_000);
+    } catch (err) {setError(err instanceof Error?err.message:"Download failed");}
   }
 
   useEffect(() => {
@@ -191,6 +269,35 @@ export default function FootballQuizTemplatePage() {
       {error && <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>}
       {loading && <p className="text-sm text-muted">Loading the football question set…</p>}
 
+      <div className="rounded-xl border border-[#bb9558]/45 bg-panel p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h2 className="font-sora text-lg font-bold text-text">Render Full HD MP4</h2>
+            <p className="mt-1 text-xs text-muted">1920 × 1080 · 30 FPS · H.264 · Guest download. The backend must explicitly enable guest rendering.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={()=>{void requestMp4();}} disabled={!timeline || renderBusy || !!renderJob && ["queued","rendering"].includes(renderJob.status)}
+              className="rounded-lg bg-[#D5AA61] px-4 py-2 text-sm font-bold text-[#182333] disabled:cursor-not-allowed disabled:opacity-50">
+              {renderBusy?"Starting…":"Render MP4"}
+            </button>
+            {renderJob && ["queued","rendering"].includes(renderJob.status)&&<button type="button" onClick={()=>{void cancelMp4();}}
+              className="rounded-lg border border-red-500/50 px-4 py-2 text-sm font-semibold text-red-300">Cancel render</button>}
+            {renderJob?.status==="completed"&&<button type="button" onClick={()=>{void downloadMp4();}}
+              className="rounded-lg border border-emerald-500/50 px-4 py-2 text-sm font-semibold text-emerald-300">Download MP4</button>}
+          </div>
+        </div>
+        {renderJob&&<div className="mt-4 space-y-1" role="status" aria-live="polite">
+          <div className="flex justify-between text-xs text-muted"><span>{renderJob.status==="completed"?"Render complete":renderJob.status==="failed"?"Render failed":renderJob.status==="cancelled"?"Cancelled":"Rendering on server"}</span>
+            <span>{renderJob.progress}%</span></div>
+          <div className="h-2 overflow-hidden rounded-full bg-panel2"><div className="h-full rounded-full bg-[#d5aa61]" style={{width:`${Math.max(0,Math.min(100,renderJob.progress))}%`}}/></div>
+          {renderJob.error&&<p className="text-xs text-red-300">{renderJob.error}</p>}
+        </div>}
+        <p className="mt-3 text-xs text-muted">
+          Voice narration needs a timed, prepared audio track because browser speech cannot be muxed into MP4.
+          Uploaded music/narration is temporary; the download expires after 15 minutes. Guest render limit: one job globally, two attempts per IP per hour.
+        </p>
+      </div>
+
       <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
         <section className="space-y-4">
           <div className="rounded-xl border border-border bg-panel p-4">
@@ -226,8 +333,16 @@ export default function FootballQuizTemplatePage() {
                 onChange={(e)=>{setLocalMusic(e.target.files?.[0]);e.target.value="";}} className="block w-full text-xs text-text file:mr-2 file:rounded file:border-0 file:bg-panel2 file:px-2 file:py-1 file:text-text"/>
             </label>
             {musicName && <div className="flex items-center justify-between gap-2 text-xs text-muted"><span className="truncate">{musicName}</span>
-              <button type="button" className="text-red-300 hover:underline" onClick={()=>{setPlaying(false);setMusicUrl(null);setMusicName(null);updateAudioSettings({musicEnabled:false});}}>Remove</button>
+              <button type="button" className="text-red-300 hover:underline" onClick={()=>{setPlaying(false);setMusicUrl(null);setMusicName(null);setMusicFile(null);updateAudioSettings({musicEnabled:false});}}>Remove</button>
             </div>}
+            <label className="block space-y-1 text-xs text-muted">Prepared full-length narration audio for MP4 (optional, max 12 MB)
+              <input type="file" accept="audio/mpeg,audio/wav,audio/ogg,audio/mp4,.mp3,.wav,.ogg,.m4a" aria-label="Choose rendered narration track"
+                onChange={(e)=>{
+                  const file=e.target.files?.[0];
+                  if (file) { if (file.size>12*1024*1024) setError("Narration file exceeds 12 MB"); else setNarrationFile(file); }
+                }} className="block w-full text-xs text-text file:mr-2 file:rounded file:border-0 file:bg-panel2 file:px-2 file:py-1 file:text-text"/>
+              {narrationFile&&<span className="text-xs text-text">{narrationFile.name} <button type="button" className="text-red-300" onClick={()=>setNarrationFile(null)}>Remove</button></span>}
+            </label>
             <label className="flex items-center gap-2 text-xs text-text">
               <input type="checkbox" disabled={!audioSettings.enabled || !musicUrl} checked={audioSettings.musicEnabled} onChange={(e)=>updateAudioSettings({musicEnabled:e.target.checked})}/> Play background music
             </label>
@@ -339,7 +454,7 @@ export default function FootballQuizTemplatePage() {
 
       <div className="rounded-xl border border-accent/30 bg-accent/5 px-4 py-3 text-xs leading-relaxed text-muted">
         <Film className="mr-2 inline-block text-accent" size={16}/>
-        <strong className="text-text">QUIZ-001 foundation:</strong> The new Champions Gold visual preview is driven by the frame timeline. Audio cue timing is now compiled from the same video frames. Browser audio preview is optional; final mixed audio and playable MP4 export remain QUIZ-005.
+        <strong className="text-text">QUIZ-001 foundation:</strong> The new Champions Gold visual preview is driven by the frame timeline. MP4 rendering is available only when the backend guest worker is enabled and passes native verification. Browser speech cannot be exported; supply a prepared narration track.
       </div>
     </div>
   );
