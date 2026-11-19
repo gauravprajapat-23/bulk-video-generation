@@ -230,6 +230,35 @@ export async function ensureTables() {
       ON quiz_automation_jobs(user_id)
       WHERE status IN ('queued','generating','rendering','uploading','needs_review')`;
 
+    // AUTO-QUIZ-02: channel-level recurring profiles, owner-set cadence and
+    // immutable per-slot claim keys. No auto-publication; approval is external.
+    await sql`
+      CREATE TABLE IF NOT EXISTS quiz_studio_profiles (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        channel_id TEXT NOT NULL,
+        niche TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        template_key TEXT NOT NULL DEFAULT 'general_trivia',
+        question_count INTEGER NOT NULL DEFAULT 10,
+        schedule_mode TEXT NOT NULL DEFAULT 'daily',
+        schedule_time_utc TEXT NOT NULL DEFAULT '13:00',
+        publish_policy TEXT NOT NULL DEFAULT 'private_review',
+        enabled BOOLEAN NOT NULL DEFAULT false,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        UNIQUE(user_id,channel_id)
+      )
+    `;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES quiz_studio_profiles(id) ON DELETE SET NULL`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS scheduled_slot TEXT`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS template_key TEXT NOT NULL DEFAULT 'football_gold'`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS quality_report JSONB`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_studio_scheduled_slot
+      ON quiz_automation_jobs(profile_id,scheduled_slot) WHERE profile_id IS NOT NULL AND scheduled_slot IS NOT NULL`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_quiz_studio_profiles_enabled
+      ON quiz_studio_profiles(schedule_time_utc) WHERE enabled=true`;
+
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
   } catch (err: any) {
