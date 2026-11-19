@@ -16,6 +16,7 @@ export interface QuizRenderProps extends Record<string, unknown> {
     effectsVolume: number;
     ducking: number;
     toneData: Record<string,string>;
+    speechCues?: {frame:number;durationFrames:number;dataUri:string;questionIndex:number;phase:"question"|"reveal"}[];
   };
 }
 
@@ -140,10 +141,15 @@ export function QuizVideo({quiz,timeline,audio,templateKey}:QuizRenderProps) {
     <QuizFrame quiz={quiz} timeline={timeline} templateKey={templateKey}/>
     {audio.musicData && <Audio src={audio.musicData} loop volume={f=>{
       const fade=Math.min(1,f/60,(timeline.totalFrames-f)/60);
-      const narrationSlot=voiceActive&&narrationSlots.some(p=>f>=p.startFrame&&f<p.endFrame);
+      const narrationSlot=(voiceActive&&narrationSlots.some(p=>f>=p.startFrame&&f<p.endFrame)) ||
+        (audio.speechCues??[]).some(c=>f>=c.frame&&f<c.frame+c.durationFrames);
       return Math.max(0,fade)*audio.musicVolume*(narrationSlot?audio.ducking:1);
     }}/>}
     {audio.narrationData&&<Audio src={audio.narrationData} volume={audio.voiceVolume}/>}
+    {(audio.speechCues??[]).map(cue=><Sequence key={`voice-${cue.questionIndex}-${cue.phase}`}
+      from={cue.frame} durationInFrames={cue.durationFrames}>
+      <Audio src={cue.dataUri} volume={audio.voiceVolume}/>
+    </Sequence>)}
     {timeline.phases.flatMap((phase):QuizToneCue[]=>{
       if (phase.questionIndex===undefined) {
         if (!audio.effectsEnabled || !["intro","halftime","outro"].includes(phase.kind)) return [];
