@@ -134,7 +134,8 @@ export async function runGuestRender(
     const expectedDuration=timeline.totalFrames/timeline.fps;
     if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
       Math.abs(metadata.fps-30)>.2 ||
-      (typeof metadata.durationInSeconds !== "number" || !Number.isFinite(metadata.durationInSeconds)) ||\n      Math.abs((metadata.durationInSeconds ?? 0)-expectedDuration)>.25) {
+      (typeof metadata.durationInSeconds !== "number" || !Number.isFinite(metadata.durationInSeconds)) ||
+      Math.abs((metadata.durationInSeconds ?? 0)-expectedDuration)>.25) {
       throw new Error("Rendered file failed FPS, dimensions, codec or duration integrity gate");
     }
     if((audioConfig.effectsEnabled || audioConfig.ticksEnabled || audioConfig.musicEnabled || audioConfig.voiceEnabled) &&
