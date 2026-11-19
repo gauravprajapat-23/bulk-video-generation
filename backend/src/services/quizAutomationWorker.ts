@@ -10,6 +10,7 @@ import { getBundledQuiz, quizToneData } from "./quizGuestRender";
 import { uploadVideoForUser } from "./youtubeUpload";
 import { generateStudioMetadata, inspectStudioQuiz, type QuizStudioTemplate } from "./quizStudioPolicy";
 import { buildQuizEvidenceReport } from "./quizStudioEvidence";
+import { generateTimedStudioSpeech } from "./quizStudioSpeech";
 
 export interface AutoQuizJob {
   id:string; user_id:string; channel_id:string; niche:string; topic:string;
@@ -63,10 +64,12 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       WHERE id=${job.id} AND status='generating'`;
     tmpDir=await fs.mkdtemp(path.join(os.tmpdir(),"auto-quiz-"));
     const output=path.join(tmpDir,"quiz.mp4");
+    const speechCues=await generateTimedStudioSpeech(quiz,timeline,tmpDir);
     const props:QuizRenderProps={
       quiz,timeline,templateKey:job.template_key,
-      audio:{musicData:null,narrationData:null,musicVolume:0,voiceVolume:0,
-        effectsVolume:.4,ducking:1,ticksEnabled:true,effectsEnabled:true,toneData:quizToneData},
+      audio:{musicData:null,narrationData:null,musicVolume:0,
+        effectsVolume:.4,ducking:1,ticksEnabled:true,effectsEnabled:true,
+        toneData:quizToneData,speechCues,voiceVolume:speechCues.length?.85:0},
     };
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
     if(composition.durationInFrames!==timeline.totalFrames||composition.width!==1920||
