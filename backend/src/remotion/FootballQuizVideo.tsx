@@ -2,7 +2,7 @@ import React from "react";
 import { AbsoluteFill, Audio, Composition, Sequence, useCurrentFrame } from "remotion";
 import type { RenderQuiz, RenderQuizTimeline } from "../services/quizRenderValidation";
 
-export interface QuizRenderProps {
+export interface QuizRenderProps extends Record<string, unknown> {
   quiz: RenderQuiz;
   timeline: RenderQuizTimeline;
   audio: {
@@ -158,9 +158,39 @@ export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
   </AbsoluteFill>;
 }
 
-export const QuizRemotionRoot:React.FC=()=> <Composition id="FootballLegendsQuiz" component={QuizVideo}
-  fps={30} width={1920} height={1080} durationInFrames={300}
-  calculateMetadata={({props})=>({durationInFrames:props.timeline.totalFrames})}
-  defaultProps={{quiz:{settings:{title:"Football Legends"},questions:[]},timeline:{phases:[],totalFrames:300,fps:30,width:1920,height:1080},
-    audio:{musicData:null,narrationData:null,effectsEnabled:false,ticksEnabled:false,musicVolume:0,effectsVolume:0,
-      voiceVolume:0,ducking:1,toneData:{}}} as QuizRenderProps}/>;
+const DEFAULT_QUIZ_PROPS: QuizRenderProps = {
+  quiz: {
+    settings: {
+      templateId: "football-legends-champions-gold",
+      theme: "champions_gold",
+      title: "Football Legends",
+      fps: 30,
+      width: 1920,
+      height: 1080,
+      introSeconds: 18,
+      halftimeSeconds: 12,
+      outroSeconds: 15,
+      defaultThinkSeconds: 10,
+      revealStyle: "cinematic",
+      voiceover: false,
+    },
+    questions: [],
+  },
+  timeline: { phases: [{ kind: "intro", startFrame: 0, endFrame: 300, durationFrames: 300 }],
+    totalFrames: 300, fps: 30, width: 1920, height: 1080 },
+  audio: { musicData: null, narrationData: null, effectsEnabled: false, ticksEnabled: false,
+    musicVolume: 0, effectsVolume: 0, voiceVolume: 0, ducking: 1, toneData: {} },
+};
+
+export const QuizRemotionRoot: React.FC = () => (
+  <Composition
+    id="FootballLegendsQuiz"
+    component={QuizVideo}
+    fps={30}
+    width={1920}
+    height={1080}
+    durationInFrames={300}
+    calculateMetadata={({ props }) => ({ durationInFrames: props.timeline.totalFrames })}
+    defaultProps={DEFAULT_QUIZ_PROPS}
+  />
+);
