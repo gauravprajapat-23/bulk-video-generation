@@ -99,7 +99,7 @@ router.get("/profiles",async(req:Request,res:Response)=>{
   const userId=(req as any).auth.userId as string;
   try {
     const rows=await sql`SELECT id,channel_id,niche,topic,template_key,question_count,
-      schedule_mode,schedule_time_utc,publish_policy,enabled,updated_at
+      schedule_mode,schedule_time_utc,publish_policy,enabled,music_asset_id,updated_at
       FROM quiz_studio_profiles WHERE user_id=${userId} ORDER BY updated_at DESC`;
     res.set("Cache-Control","no-store").json(rows);
   }catch{res.status(500).json({error:"Unable to load channel profiles"});}
