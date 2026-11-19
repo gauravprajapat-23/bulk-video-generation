@@ -9,12 +9,12 @@ interface Channel { channel_id:string; channel_title:string }
 interface ChannelProfile {
   id:string;channel_id:string;niche:string;topic:string;template_key:string;
   question_count:number;schedule_mode:string;schedule_time_utc:string;
-  publish_policy:string;enabled:boolean;
+  publish_policy:string;enabled:boolean;music_asset_id?:string|null;
 }
 interface LicensedAsset {
   id:string;channel_id:string;asset_kind:string;label:string;license_name:string;
   commercial_use_allowed:boolean;youtube_use_allowed:boolean;
-  revoked_at:string|null;expires_at:string|null;
+  revoked_at:string|null;expires_at:string|null;stored_filename:string|null;
 }
 interface AutomationJob {
   id:string;topic:string;niche:string;channel_id:string;status:string;
@@ -45,6 +45,7 @@ export default function QuizAutomationPage(){
   const [assetCommercial,setAssetCommercial]=useState(false);
   const [assetYoutube,setAssetYoutube]=useState(false);
   const [assetBusy,setAssetBusy]=useState(false);
+  const [audioFiles,setAudioFiles]=useState<Record<string,File|null>>({});
   const [templateKey,setTemplateKey]=useState("general_trivia");
   const [scheduleMode,setScheduleMode]=useState("weekdays");
   const [scheduleTime,setScheduleTime]=useState("13:00");
@@ -143,6 +144,29 @@ export default function QuizAutomationPage(){
       setAssetCommercial(false);setAssetYoutube(false);
       await refresh();
     }catch(err){setError(err instanceof Error?err.message:"Unable to register license");}
+    finally{setAssetBusy(false);}
+  }
+  async function uploadLicensedAudio(asset:LicensedAsset){
+    const file=audioFiles[asset.id];
+    if(!file){setError("Select MP3 or WAV first");return;}
+    if(file.size>12*1024*1024){setError("Licensed audio exceeds 12 MB");return;}
+    setAssetBusy(true);setError("");
+    try{
+      const data=new FormData();data.set("audio",file);
+      await authFetch(`/quiz-automation/assets/${asset.id}/audio`,{method:"POST",body:data});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Licensed audio upload failed");}
+    finally{setAssetBusy(false);}
+  }
+  async function assignMusic(assetId:string|null){
+    const profile=profiles.find(p=>p.channel_id===channelId);
+    if(!profile){setError("Save channel profile first");return;}
+    setAssetBusy(true);setError("");
+    try{
+      await authFetch(`/quiz-automation/profiles/${profile.id}/music`,{
+        method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({assetId})});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Unable to assign licensed music");}
     finally{setAssetBusy(false);}
   }
   async function revokeLicense(asset:LicensedAsset){
@@ -287,8 +311,21 @@ export default function QuizAutomationPage(){
       </div>
       <button type="button" disabled={assetBusy||!channelId||!assetLabel||!assetLicense||!assetEvidence} onClick={()=>void registerLicense()}
         className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text disabled:opacity-50">Register license evidence</button>
+      {profiles.find(p=>p.channel_id===channelId)?.music_asset_id&&<button type="button"
+        disabled={assetBusy} onClick={()=>void assignMusic(null)}
+        className="text-xs text-muted underline">Remove scheduled music</button>}
       {assets.filter(a=>a.channel_id===channelId).map(a=><div key={a.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-xs">
         <span className="text-text">{a.label} · {a.license_name} · {a.revoked_at?"Revoked":a.commercial_use_allowed&&a.youtube_use_allowed?"Rights declared":"Restricted"}</span>
+        {!a.revoked_at&&!a.stored_filename&&<div className="flex flex-wrap gap-2">
+          <input type="file" accept=".mp3,.wav,audio/mpeg,audio/wav"
+            aria-label={`Licensed audio for ${a.label}`}
+            onChange={e=>setAudioFiles(prev=>({...prev,[a.id]:e.target.files?.[0]||null}))}
+            className="max-w-52 text-xs text-muted"/>
+          <button type="button" disabled={assetBusy||!audioFiles[a.id]}
+            onClick={()=>void uploadLicensedAudio(a)} className="text-accent disabled:opacity-50">Upload music</button>
+        </div>}
+        {a.stored_filename&&!a.revoked_at&&<button type="button" disabled={assetBusy}
+          onClick={()=>void assignMusic(a.id)} className="text-accent disabled:opacity-50">Use for scheduled videos</button>}
         {!a.revoked_at&&<button type="button" disabled={assetBusy} onClick={()=>void revokeLicense(a)}
           className="text-red-300 disabled:opacity-50">Revoke</button>}
       </div>)}
