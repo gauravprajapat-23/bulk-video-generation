@@ -47,7 +47,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
   try{
     const quiz=await generateAutoQuiz({
       niche:job.niche,topic:job.topic,csv:job.csv_source,
-      questionCount:job.csv_source?0:job.question_count,
+      questionCount:job.csv_source?Math.max(5,Math.min(20,job.question_count)):job.question_count,
     });
     const {timeline}=parseRenderQuiz(quiz);
     const serveUrl=await getBundledQuiz();
