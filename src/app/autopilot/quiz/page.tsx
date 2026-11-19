@@ -6,6 +6,11 @@ import { Bot, FileUp, Youtube, RefreshCcw, Sparkles, ShieldCheck } from "lucide-
 import { getBackendToken } from "@/lib/backendClient";
 
 interface Channel { channel_id:string; channel_title:string }
+interface ChannelProfile {
+  id:string;channel_id:string;niche:string;topic:string;template_key:string;
+  question_count:number;schedule_mode:string;schedule_time_utc:string;
+  publish_policy:string;enabled:boolean;
+}
 interface AutomationJob {
   id:string;topic:string;niche:string;channel_id:string;status:string;
   progress:number;youtube_video_url:string|null;error_message:string|null;
@@ -21,6 +26,12 @@ export default function QuizAutomationPage(){
   const [channels,setChannels]=useState<Channel[]>([]);
   const [channelId,setChannelId]=useState("");
   const [jobs,setJobs]=useState<AutomationJob[]>([]);
+  const [profiles,setProfiles]=useState<ChannelProfile[]>([]);
+  const [templateKey,setTemplateKey]=useState("general_trivia");
+  const [scheduleMode,setScheduleMode]=useState("weekdays");
+  const [scheduleTime,setScheduleTime]=useState("13:00");
+  const [publishPolicy,setPublishPolicy]=useState("private_review");
+  const [profileBusy,setProfileBusy]=useState(false);
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const [ready,setReady]=useState(false);
@@ -35,12 +46,13 @@ export default function QuizAutomationPage(){
   },[]);
   const refresh=useCallback(async()=>{
     try{
-      const [available,queued]=await Promise.all([
-        authFetch("/youtube/channels"),authFetch("/quiz-automation/jobs"),
+      const [available,queued,savedProfiles]=await Promise.all([
+        authFetch("/youtube/channels"),authFetch("/quiz-automation/jobs"),authFetch("/quiz-automation/profiles"),
       ]);
       setChannels(available);
       setChannelId(current=>current||available?.[0]?.channel_id||"");
       setJobs(queued);
+      setProfiles(savedProfiles);
       setReady(true);
     }catch(err){setError(err instanceof Error?err.message:"Unable to load channel or jobs");}
   },[authFetch]);
@@ -50,6 +62,26 @@ export default function QuizAutomationPage(){
     const t=window.setInterval(()=>void refresh(),5000);
     return()=>window.clearInterval(t);
   },[jobs,refresh]);
+  async function saveProfile(enable:boolean){
+    setProfileBusy(true);setError("");
+    try{
+      await authFetch("/quiz-automation/profiles",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({channelId,niche,topic,template:templateKey,
+          questionCount:count,scheduleMode,scheduleTimeUtc:scheduleTime,
+          publishPolicy,enabled:enable})});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Could not save profile");}
+    finally{setProfileBusy(false);}
+  }
+  async function toggleProfile(profile:ChannelProfile,enabled:boolean){
+    setProfileBusy(true);setError("");
+    try{
+      await authFetch(`/quiz-automation/profiles/${profile.id}/state`,{
+        method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({enabled})});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Could not change schedule");}
+    finally{setProfileBusy(false);}
+  }
   async function submit(){
     setLoading(true);setError("");
     try{
@@ -121,6 +153,51 @@ export default function QuizAutomationPage(){
         <Link href="/youtube" className="inline-flex items-center gap-2 text-sm text-accent hover:underline"><Youtube size={15}/> Connect YouTube channel</Link>
       </aside>
     </div>
+    <section className="space-y-4 rounded-xl border border-border bg-panel p-5">
+      <h2 className="font-sora text-xl font-bold text-text">Recurring channel studio</h2>
+      <p className="text-sm text-muted">Save a channel profile to generate a new AI quiz at the specified UTC time. Each scheduled video is private or unlisted for owner review; the app never publishes directly to the public.</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="space-y-1 text-sm text-muted">Visual identity
+          <select value={templateKey} onChange={e=>setTemplateKey(e.target.value)}
+            className="block w-full rounded-lg border border-border bg-bg p-3 text-sm text-text">
+            <option value="general_trivia">General trivia</option>
+            <option value="football_gold">Football champions gold</option>
+            <option value="science_lab">Science lab</option>
+            <option value="history_archive">History archive</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-sm text-muted">Cadence
+          <select value={scheduleMode} onChange={e=>setScheduleMode(e.target.value)}
+            className="block w-full rounded-lg border border-border bg-bg p-3 text-sm text-text">
+            <option value="daily">Daily</option><option value="weekdays">Weekdays only</option>
+          </select>
+        </label>
+        <label className="space-y-1 text-sm text-muted">Schedule (UTC)
+          <input type="time" value={scheduleTime} onChange={e=>setScheduleTime(e.target.value)}
+            className="block w-full rounded-lg border border-border bg-bg p-3 text-sm text-text"/>
+        </label>
+        <label className="space-y-1 text-sm text-muted">YouTube visibility
+          <select value={publishPolicy} onChange={e=>setPublishPolicy(e.target.value)}
+            className="block w-full rounded-lg border border-border bg-bg p-3 text-sm text-text">
+            <option value="private_review">Private — owner review</option>
+            <option value="unlisted_review">Unlisted — owner review</option>
+          </select>
+        </label>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <button type="button" disabled={profileBusy||!channelId} onClick={()=>void saveProfile(false)}
+          className="rounded-lg border border-border px-4 py-2 text-sm font-semibold text-text disabled:opacity-50">Save disabled</button>
+        <button type="button" disabled={profileBusy||!channelId} onClick={()=>void saveProfile(true)}
+          className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Save & enable schedule</button>
+      </div>
+      <p className="text-xs text-muted">Enabling requires server-side AI configuration and the recurring scheduler switch. Profiles are tied to the selected connected YouTube channel. A verified AI fact-checking service is not yet integrated.</p>
+      {profiles.map(p=><div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg p-3">
+        <div><p className="text-sm font-semibold text-text">{p.topic}</p>
+          <p className="text-xs text-muted">{p.template_key.replaceAll("_"," ")} · {p.schedule_mode} at {p.schedule_time_utc} UTC · {p.publish_policy.replaceAll("_"," ")}</p></div>
+        <button type="button" disabled={profileBusy} onClick={()=>void toggleProfile(p,!p.enabled)}
+          className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text disabled:opacity-50">{p.enabled?"Pause automation":"Enable automation"}</button>
+      </div>)}
+    </section>
     <section className="space-y-3 rounded-xl border border-border bg-panel p-5">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-text">Automation jobs</h2>
