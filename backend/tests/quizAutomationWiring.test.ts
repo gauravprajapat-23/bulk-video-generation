@@ -30,7 +30,11 @@ test("automated worker uses server rendering and does not accept arbitrary media
   const worker=source("services/quizAutomationWorker.ts");
   assert.match(worker,/selectComposition/);
   assert.match(worker,/renderMedia/);
-  assert.match(worker,/getVideoMetadata/);
+  // Metadata validation moved into the dedicated pre-upload MP4 QA service.
+  assert.match(worker,/inspectStudioMp4\(output,timeline\.totalFrames\/30\)/);
+  const mediaQA=source("services/quizStudioMediaQA.ts");
+  assert.match(mediaQA,/getVideoMetadata\(file\)/);
+  assert.match(worker,/if\(!mediaQA\.passed\)throw/);
   assert.match(worker,/uploadVideoForUser/);
   assert.match(worker,/await fs\.rm\(tmpDir/);
   assert.doesNotMatch(worker,/fetch\(job\./);
