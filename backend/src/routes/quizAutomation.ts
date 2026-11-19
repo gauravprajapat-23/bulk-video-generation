@@ -161,7 +161,7 @@ router.get("/jobs",async(req:Request,res:Response)=>{
   const userId=(req as any).auth.userId as string;
   try{
     const rows=await sql`SELECT id,topic,niche,channel_id,status,progress,
-      youtube_video_id,youtube_video_url,error_message,review_status,publication_status,quality_report,evidence_report,created_at,started_at,completed_at
+      youtube_video_id,youtube_video_url,error_message,review_status,publication_status,quality_report,evidence_report,source_check_report,media_qa_report,created_at,started_at,completed_at
       FROM quiz_automation_jobs WHERE user_id=${userId}
       ORDER BY created_at DESC LIMIT 30`;
     res.set("Cache-Control","no-store").json(rows);
