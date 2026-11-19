@@ -14,6 +14,11 @@ export async function publishApprovedQuizVideo(args:{
     AND channel_id=${args.channelId} AND refresh_token IS NOT NULL LIMIT 1`;
   if(rows.length!==1)throw new Error("Channel authorization unavailable");
   const token=rows[0];
+  const granted=Array.isArray(token.scopes)?token.scopes as string[]:[];
+  if(!granted.includes("https://www.googleapis.com/auth/youtube.force-ssl") &&
+    !granted.includes("https://www.googleapis.com/auth/youtube")){
+    throw new Error("Reconnect YouTube with the video-update permission before publishing");
+  }
   const oauth=new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,process.env.GOOGLE_REDIRECT_URI);
   oauth.setCredentials({
