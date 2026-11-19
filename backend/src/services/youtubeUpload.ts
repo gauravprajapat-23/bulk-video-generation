@@ -32,14 +32,15 @@ export async function uploadVideoForUser(
     visibility?: string;
     madeForKids?: boolean;
     publishAt?: string;
+    targetChannelId?: string;
   }
 ): Promise<UploadResult> {
-  const rows = await sql`
-    SELECT * FROM user_youtube_tokens
-    WHERE user_id = ${userId}
-    ORDER BY connected_at DESC
-    LIMIT 1
-  `;
+  const rows = metadata.targetChannelId
+    ? await sql`SELECT * FROM user_youtube_tokens
+        WHERE user_id = ${userId} AND channel_id = ${metadata.targetChannelId}
+          AND refresh_token IS NOT NULL LIMIT 1`
+    : await sql`SELECT * FROM user_youtube_tokens
+        WHERE user_id = ${userId} ORDER BY connected_at DESC LIMIT 1`;
   if (rows.length === 0 || !rows[0].refresh_token) {
     throw new Error("No YouTube channel connected for this user");
   }
