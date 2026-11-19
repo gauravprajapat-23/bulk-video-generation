@@ -3,7 +3,7 @@ import sql, { isDbAvailable } from "../db";
 import { uploadSchedule } from "./youtubeUpload";
 import { processAutopilotConfigs } from "./autopilotPipeline";
 import { processQueuedQuizAutomations } from "./quizAutomationWorker";
-import { enqueueDueStudioVideos, quarantineInterruptedStudioJobs } from "./quizStudioScheduler";
+import { enqueueDueStudioVideos, quarantineInterruptedStudioJobs, recoverExpiredQuizLeases } from "./quizStudioScheduler";
 
 const BATCH_SIZE = 5;
 
@@ -148,6 +148,7 @@ export function startScheduler(): void {
     await processAutomationRules();
     await processAutopilotConfigs();
     // Opt-in durable quiz generation -> Remotion render -> private YouTube upload.
+    await recoverExpiredQuizLeases();
     await quarantineInterruptedStudioJobs();
     await enqueueDueStudioVideos();
     await processQueuedQuizAutomations();
