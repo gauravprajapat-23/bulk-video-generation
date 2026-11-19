@@ -92,7 +92,7 @@ export default function QuizAutomationPage(){
             <input type="file" accept=".csv,text/csv" className="ml-auto max-w-52 text-xs text-muted"
               onChange={e=>{const f=e.target.files?.[0]||null;if(f&&f.size>100000){setError("CSV must be under 100KB");return;}setCsv(f);}}/>
           </label>
-          <p className="mt-2 text-xs text-muted">If no CSV is uploaded, the configured AI provider generates 5–20 questions from your niche. AI-generated facts should be checked before making the private video public.</p>
+          <p className="mt-2 text-xs text-muted">If no CSV is uploaded, the configured AI provider generates 5–20 questions from your niche. AI-generated facts should be checked before making the private video public. Currently this uses the Champions Gold football-branded visual template, even for other niches.</p>
           <a href="/templates/football-legends-quiz-20.csv" download className="mt-2 inline-block text-xs text-accent hover:underline">Download example CSV schema</a>
         </div>
         {!csv&&<label className="block space-y-1 text-sm text-muted">AI question count: {count}
@@ -101,7 +101,7 @@ export default function QuizAutomationPage(){
         </label>}
         <div className="flex items-start gap-2 rounded-lg border border-emerald-600/25 bg-emerald-900/10 p-3 text-xs text-muted">
           <ShieldCheck size={18} className="shrink-0 text-emerald-400"/>
-          Videos upload as **private**. The channel owner must review and publish them from YouTube Studio. No public publishing without explicit future opt-in.
+          Videos upload as private. The channel owner must review and publish them from YouTube Studio. No public publishing without explicit future opt-in.
         </div>
         <button disabled={loading||!channelId||!ready} type="button" onClick={()=>void submit()}
           className="flex items-center justify-center gap-2 rounded-lg bg-accent px-5 py-3 text-sm font-bold text-white disabled:opacity-50">
