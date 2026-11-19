@@ -18,6 +18,11 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:100_000,fil
 router.post("/jobs",upload.single("csv"),async(req:Request,res:Response)=>{
   const userId=(req as any).auth.userId as string;
   try{
+    if(process.env.QUIZ_AUTOMATION_ENABLED!=="true" ||
+      (process.env.NODE_ENV==="production" && process.env.SCHEDULER_ENABLED!=="true")){
+      res.status(503).json({error:"Quiz automation worker is disabled. Ask the administrator to enable it."});
+      return;
+    }
     const niche=req.body?.niche,topic=req.body?.topic;
     const channelId=req.body?.channelId;
     const questionCount=Number(req.body?.questionCount || 10);
@@ -36,6 +41,11 @@ router.post("/jobs",upload.single("csv"),async(req:Request,res:Response)=>{
       WHERE user_id=${userId} AND status IN ('queued','generating','rendering','uploading','needs_review')
       LIMIT 1`;
     if(outstanding.length){res.status(409).json({error:"Finish or reconcile the existing automation job before creating another"});return;}
+    const rate=await sql`SELECT COUNT(*)::int AS count FROM quiz_automation_jobs
+      WHERE user_id=${userId} AND created_at>now()-interval '24 hours'`;
+    if(Number(rate[0]?.count||0)>=3){
+      res.status(429).json({error:"Daily limit reached: up to 3 automation attempts per day"});return;
+    }
     const created=await sql`
       INSERT INTO quiz_automation_jobs
         (user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,status)
