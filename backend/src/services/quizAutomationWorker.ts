@@ -9,6 +9,7 @@ import { parseRenderQuiz } from "./quizRenderValidation";
 import { getBundledQuiz, quizToneData } from "./quizGuestRender";
 import { uploadVideoForUser } from "./youtubeUpload";
 import { generateStudioMetadata, inspectStudioQuiz, type QuizStudioTemplate } from "./quizStudioPolicy";
+import { buildQuizEvidenceReport } from "./quizStudioEvidence";
 
 export interface AutoQuizJob {
   id:string; user_id:string; channel_id:string; niche:string; topic:string;
@@ -53,8 +54,9 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     });
     const {timeline}=parseRenderQuiz(quiz);
     const quality=inspectStudioQuiz(quiz);
+    const evidence=buildQuizEvidenceReport(quiz,job.csv_source);
     await sql`UPDATE quiz_automation_jobs SET quality_report=${JSON.stringify(quality)}::jsonb,
-      updated_at=now() WHERE id=${job.id} AND status='generating'`;
+      evidence_report=${JSON.stringify(evidence)}::jsonb, updated_at=now() WHERE id=${job.id} AND status='generating'`;
     if(!quality.passed)throw new Error("Content quality gate: "+quality.reasons.join("; ").slice(0,500));
     const serveUrl=await getBundledQuiz();
     await sql`UPDATE quiz_automation_jobs SET status='rendering',progress=10,updated_at=now()
@@ -69,8 +71,17 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
     if(composition.durationInFrames!==timeline.totalFrames||composition.width!==1920||
       composition.height!==1080||composition.fps!==30)throw new Error("Unexpected Remotion quiz composition");
+    // Heartbeat avoids falsely quarantining a healthy long 1080p render.
+    const heartbeat=setInterval(()=>{
+      void sql`UPDATE quiz_automation_jobs SET updated_at=now()
+        WHERE id=${job.id} AND status='rendering'`.catch(err=>{
+        console.warn("[quiz-auto] heartbeat failed",job.id,err);
+      });
+    },60_000);
+    heartbeat.unref();
     let lastPercent=10;
     let progressWrite:Promise<unknown>=Promise.resolve();
+    try {
     await renderMedia({
       serveUrl,composition,inputProps:props,codec:"h264",outputLocation:output,
       cancelSignal,
@@ -87,6 +98,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       },
     });
     await progressWrite;
+    } finally { clearInterval(heartbeat); }
     const metadata=await getVideoMetadata(output);
     const duration=metadata.durationInSeconds;
     if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
