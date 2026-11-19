@@ -5,6 +5,7 @@ import sql from "../db";
 import { makeAutoQuizFromCsv, validateAutoQuizInput } from "../services/quizAutomationContent";
 import { validateStudioProfile } from "../services/quizStudioPolicy";
 import { publishApprovedQuizVideo } from "../services/quizStudioPublication";
+import {validateStudioAssetLicense} from "../services/quizStudioAssets";
 
 const router=Router();
 router.use(requireAuth);
@@ -16,6 +17,47 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:100_000,fil
     callback(null,true);
   },
 });
+
+router.get("/assets",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  try{
+    const rows=await sql`SELECT id,channel_id,asset_kind,label,source_url,license_name,
+      license_evidence_url,attribution_text,commercial_use_allowed,youtube_use_allowed,
+      expires_at,revoked_at,created_at FROM quiz_studio_assets
+      WHERE user_id=${userId} ORDER BY created_at DESC LIMIT 100`;
+    res.set("Cache-Control","no-store").json(rows);
+  }catch{res.status(500).json({error:"Unable to load licensed media ledger"});}
+});
+router.post("/assets",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  try{
+    const asset=validateStudioAssetLicense(req.body);
+    const rows=await sql`INSERT INTO quiz_studio_assets
+      (user_id,channel_id,asset_kind,label,source_url,license_name,license_evidence_url,
+       attribution_text,commercial_use_allowed,youtube_use_allowed,expires_at)
+      SELECT ${userId},${asset.channelId},${asset.kind},${asset.label},
+        ${asset.sourceUrl},${asset.licenseName},${asset.licenseEvidenceUrl},
+        ${asset.attribution},${asset.commercialUseAllowed},${asset.youtubeUseAllowed},
+        ${asset.expiresAt?new Date(asset.expiresAt).toISOString():null}
+      WHERE EXISTS (SELECT 1 FROM user_youtube_tokens
+        WHERE user_id=${userId} AND channel_id=${asset.channelId} AND refresh_token IS NOT NULL)
+      RETURNING id,channel_id,asset_kind,label,license_name,commercial_use_allowed,
+        youtube_use_allowed,expires_at,revoked_at`;
+    if(!rows.length){res.status(403).json({error:"Connected channel authorization required"});return;}
+    res.status(201).json(rows[0]);
+  }catch(err){res.status(400).json({error:err instanceof Error?err.message:"Invalid media license"});}
+});
+router.post("/assets/:id/revoke",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  try{
+    const rows=await sql`UPDATE quiz_studio_assets SET revoked_at=now()
+      WHERE id=${req.params.id} AND user_id=${userId} AND revoked_at IS NULL
+      RETURNING id,revoked_at`;
+    if(!rows.length){res.status(404).json({error:"Media license unavailable"});return;}
+    res.set("Cache-Control","no-store").json(rows[0]);
+  }catch{res.status(500).json({error:"Could not revoke media license"});}
+});
+// The ledger does not download or authorize actual media use by itself.
 
 router.get("/profiles",async(req:Request,res:Response)=>{
   const userId=(req as any).auth.userId as string;
