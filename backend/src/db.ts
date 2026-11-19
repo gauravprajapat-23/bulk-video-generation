@@ -226,6 +226,9 @@ export async function ensureTables() {
     await sql`CREATE INDEX IF NOT EXISTS idx_quiz_auto_due ON quiz_automation_jobs(created_at)
       WHERE status = 'queued'`;
     await sql`CREATE INDEX IF NOT EXISTS idx_quiz_auto_owner ON quiz_automation_jobs(user_id, created_at DESC)`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_quiz_auto_one_active_per_user
+      ON quiz_automation_jobs(user_id)
+      WHERE status IN ('queued','generating','rendering','uploading','needs_review')`;
 
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
