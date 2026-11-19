@@ -63,15 +63,24 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
     if(composition.durationInFrames!==timeline.totalFrames||composition.width!==1920||
       composition.height!==1080||composition.fps!==30)throw new Error("Unexpected Remotion quiz composition");
+    let lastPercent=10;
+    let progressWrite:Promise<unknown>=Promise.resolve();
     await renderMedia({
       serveUrl,composition,inputProps:props,codec:"h264",outputLocation:output,
       cancelSignal,
       onProgress:({progress})=>{
-        // Progress updates are intentionally approximate; don't run a DB query for every frame.
-        // Safe to publish the current value periodically when the render is complete.
-        void progress;
+        // Persist coarse 10% buckets sequentially: no per-frame database traffic.
+        const next=Math.min(85,10+Math.floor(progress*75));
+        if(next<lastPercent+10)return;
+        lastPercent=next;
+        progressWrite=progressWrite.then(()=>sql`UPDATE quiz_automation_jobs
+          SET progress=${next},updated_at=now()
+          WHERE id=${job.id} AND status='rendering'`).catch(err=>{
+          console.warn("[quiz-auto] progress persistence warning",job.id,err);
+        });
       },
     });
+    await progressWrite;
     const metadata=await getVideoMetadata(output);
     const duration=metadata.durationInSeconds;
     if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
