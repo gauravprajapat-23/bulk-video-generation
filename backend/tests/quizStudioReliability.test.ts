@@ -8,7 +8,8 @@ test("worker claims jobs with per-run fencing and heartbeats every stage",()=>{
   const w=source("services/quizAutomationWorker.ts");
   assert.match(w,/worker_claim_id=\$\{claimId\}/);
   assert.match(w,/worker_heartbeat_at=now\(\)/);
-  assert.match(w,/status='rendering' RETURNING id/);
+  // The rendering-to-upload transition must match an unexpired claim.
+  assert.match(w,/status='rendering' AND worker_lease_expires_at>now\(\) RETURNING id/);
   assert.match(w,/if\(uploadClaim\.length!==1\)/);
   assert.match(w,/if\(acknowledged\.length!==1\)/);
   assert.match(w,/clearInterval\(leaseHeartbeat\)/);
