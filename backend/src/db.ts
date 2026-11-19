@@ -298,6 +298,15 @@ export async function ensureTables() {
     await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS media_qa_report JSONB`;
     await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS source_check_report JSONB`;
     await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES quiz_studio_assets(id) ON DELETE SET NULL`;
+    // AUTO-QUIZ-05: private immutable asset file registration.
+    await sql`ALTER TABLE quiz_studio_assets ADD COLUMN IF NOT EXISTS stored_filename TEXT`;
+    await sql`ALTER TABLE quiz_studio_assets ADD COLUMN IF NOT EXISTS content_sha256 TEXT`;
+    await sql`ALTER TABLE quiz_studio_assets ADD COLUMN IF NOT EXISTS size_bytes BIGINT`;
+    await sql`ALTER TABLE quiz_studio_assets ADD COLUMN IF NOT EXISTS mime_type TEXT`;
+    await sql`ALTER TABLE quiz_studio_profiles ADD COLUMN IF NOT EXISTS music_asset_id UUID REFERENCES quiz_studio_assets(id) ON DELETE SET NULL`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS music_asset_id UUID REFERENCES quiz_studio_assets(id) ON DELETE SET NULL`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS worker_lease_expires_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS worker_attempt_count INTEGER NOT NULL DEFAULT 0`;
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
   } catch (err: any) {
