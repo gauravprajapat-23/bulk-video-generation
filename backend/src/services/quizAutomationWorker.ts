@@ -91,8 +91,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     // When YouTube starts processing, an error may still mean an accepted upload.
     // Record needs_review rather than automatically retrying or duplicating a video.
     uploadMayHaveSucceeded=true;
-    const buffer=await fs.readFile(output);
-    const uploaded=await uploadVideoForUser(job.user_id,buffer,"video/mp4",{
+    const uploaded=await uploadVideoForUser(job.user_id,output,"video/mp4",{
       title,description,tags:["quiz","trivia",job.niche.slice(0,40)],
       categoryId:"27",visibility:job.output_visibility,madeForKids:false,
       targetChannelId:job.channel_id,
