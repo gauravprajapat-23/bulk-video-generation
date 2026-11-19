@@ -132,10 +132,12 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       ...seo,visibility:job.output_visibility,madeForKids:false,
       targetChannelId:job.channel_id,
     });
-    await sql`UPDATE quiz_automation_jobs SET
+    const acknowledged=await sql`UPDATE quiz_automation_jobs SET
       youtube_video_id=${uploaded.youtubeVideoId},youtube_video_url=${uploaded.youtubeVideoUrl},
       status='completed',progress=100,completed_at=now(),updated_at=now()
-      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='uploading'`;
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='uploading'
+      RETURNING id`;
+    if(acknowledged.length!==1)throw new Error("YouTube upload completed but job claim was lost; reconcile manually");
     uploadMayHaveSucceeded=false;
     return true;
   }catch(err){
