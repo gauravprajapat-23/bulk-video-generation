@@ -44,6 +44,8 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
   const claimId=randomUUID();
   const claimed=await sql`UPDATE quiz_automation_jobs SET
       worker_claim_id=${claimId},worker_heartbeat_at=now(),
+      worker_lease_expires_at=now()+interval '90 seconds',
+      worker_attempt_count=worker_attempt_count+1,
       status='generating', started_at=now(), updated_at=now(),progress=2
     WHERE id=${id} AND status='queued'
     RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,template_key,music_asset_id`;
@@ -53,9 +55,13 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
   let uploadMayHaveSucceeded=false;
   const {cancelSignal,cancel}=makeCancelSignal();
   const leaseHeartbeat=setInterval(()=>{
-    void sql`UPDATE quiz_automation_jobs SET worker_heartbeat_at=now(),updated_at=now()
+    void sql`UPDATE quiz_automation_jobs SET worker_heartbeat_at=now(),updated_at=now(),
+      worker_lease_expires_at=now()+interval '90 seconds'
       WHERE id=${job.id} AND worker_claim_id=${claimId}
-        AND status IN ('generating','rendering','uploading')`.catch(err=>{
+        AND status IN ('generating','rendering','uploading')
+        AND worker_lease_expires_at>now() RETURNING id`.then(rows=>{
+      if(rows.length!==1)cancel();
+    }).catch(err=>{
       console.warn("[quiz-auto] heartbeat failure",job.id,err);
     });
   },30_000);
@@ -118,7 +124,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering'`;
     if(!mediaQA.passed)throw new Error("MP4 quality gate: "+mediaQA.checks.join("; "));
     const uploadClaim=await sql`UPDATE quiz_automation_jobs SET status='uploading',progress=90,updated_at=now()
-      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering' RETURNING id`;
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering' AND worker_lease_expires_at>now() RETURNING id`;
     if(uploadClaim.length!==1)throw new Error('Lost worker claim before upload');
 
     const connected=await sql`SELECT channel_id FROM user_youtube_tokens
@@ -137,7 +143,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const acknowledged=await sql`UPDATE quiz_automation_jobs SET
       youtube_video_id=${uploaded.youtubeVideoId},youtube_video_url=${uploaded.youtubeVideoUrl},
       status='completed',progress=100,completed_at=now(),updated_at=now()
-      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='uploading'
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='uploading' AND worker_lease_expires_at>now()
       RETURNING id`;
     if(acknowledged.length!==1)throw new Error("YouTube upload completed but job claim was lost; reconcile manually");
     uploadMayHaveSucceeded=false;
