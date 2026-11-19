@@ -64,12 +64,12 @@ function wavTone(frequency:number,duration:number):string {
   }
   return "data:audio/wav;base64,"+data.toString("base64");
 }
-const tones:Record<string,string>={
+export const quizToneData:Record<string,string>={
   intro:wavTone(523.25,.5),tick:wavTone(660,.15),urgent:wavTone(880,.18),
   suspense:wavTone(220,.65),reveal:wavTone(784,.55),
 };
 
-async function getBundledQuiz(): Promise<string> {
+export async function getBundledQuiz(): Promise<string> {
   if(!bundlePromise) {
     const entry=path.resolve(__dirname,"../../src/remotion/quizEntry.tsx");
     if(!fs.existsSync(entry)) throw new Error("Remotion quiz source is missing from backend deployment");
@@ -118,7 +118,7 @@ export async function runGuestRender(
         narrationData:audioConfig.voiceEnabled?toUri(media.narration,media.narrationMime):null,
         ticksEnabled:audioConfig.ticksEnabled,effectsEnabled:audioConfig.effectsEnabled,
         musicVolume:audioConfig.musicVolume,effectsVolume:audioConfig.effectsVolume,
-        voiceVolume:audioConfig.voiceVolume,ducking:audioConfig.ducking,toneData:tones,
+        voiceVolume:audioConfig.voiceVolume,ducking:audioConfig.ducking,toneData:quizToneData,
       },
     };
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
