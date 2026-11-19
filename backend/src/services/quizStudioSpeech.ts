@@ -53,10 +53,13 @@ export async function generateTimedStudioSpeech(
       await fs.writeFile(file,bytes);
       const meta=await getVideoMetadata(file);
       const seconds=meta.durationInSeconds;
-      const maxSeconds=phase.durationFrames/timeline.fps-(phaseName==="question"?.15:.1);
+      const extra=timeline.phases.find(p=>p.questionIndex===i &&
+        p.kind===(phaseName==="question"?"clues":"transition"));
+      const slotFrames=phase.durationFrames+(extra?.durationFrames??0);
+      const maxSeconds=slotFrames/timeline.fps-.15;
       if(typeof seconds!=="number"||!Number.isFinite(seconds)||seconds<=0||
         seconds>maxSeconds)throw new Error("Narration clip "+i+" "+phaseName+" exceeds its "+maxSeconds.toFixed(1)+" second window");
-      cues.push({frame:phase.startFrame,durationFrames:phase.durationFrames,
+      cues.push({frame:phase.startFrame,durationFrames:slotFrames,
         dataUri:"data:audio/mpeg;base64,"+bytes.toString("base64"),questionIndex:i,phase:phaseName});
     }
   }
