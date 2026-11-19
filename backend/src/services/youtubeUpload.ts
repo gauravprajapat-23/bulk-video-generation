@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import sql from "../db";
 import { Readable } from "stream";
+import { createReadStream } from "node:fs";
 import { readOwnedVideo } from "./ownedMedia";
 
 interface UploadResult {
@@ -22,7 +23,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
 
 export async function uploadVideoForUser(
   userId: string,
-  videoBuffer: Buffer,
+  videoBuffer: Buffer | string,
   mimeType: string,
   metadata: {
     title: string;
@@ -85,12 +86,9 @@ export async function uploadVideoForUser(
     },
   };
 
-  const stream = new Readable({
-    read() {
-      this.push(videoBuffer);
-      this.push(null);
-    },
-  });
+  const stream = typeof videoBuffer === "string"
+    ? createReadStream(videoBuffer)
+    : Readable.from(videoBuffer);
 
   const insertRes = await youtube.videos.insert({
     part: ["snippet", "status"],
