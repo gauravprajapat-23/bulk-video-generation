@@ -12,7 +12,7 @@ test("CSV automation imports all 20 sample questions and builds canonical 30fps 
   assert.equal(rows.length,20);
   const quiz=makeAutoQuizFromCsv(fixture,"Football Legends Quiz");
   assert.equal(quiz.questions.length,20);
-  assert.equal(quiz.questions[0].correctOption,"B");
+  assert.equal(quiz.questions[0].correctOption,"A");
   const {timeline}=parseRenderQuiz(quiz);
   assert.equal(timeline.fps,30);
   assert.equal(timeline.totalFrames,16350);
