@@ -6,6 +6,7 @@ import { makeAutoQuizFromCsv, validateAutoQuizInput } from "../services/quizAuto
 import { validateStudioProfile } from "../services/quizStudioPolicy";
 import { publishApprovedQuizVideo } from "../services/quizStudioPublication";
 import {validateStudioAssetLicense} from "../services/quizStudioAssets";
+import {storeLicensedAudio} from "../services/quizStudioAssetStorage";
 
 const router=Router();
 router.use(requireAuth);
@@ -59,6 +60,41 @@ router.post("/assets/:id/revoke",async(req:Request,res:Response)=>{
 });
 // The ledger does not download or authorize actual media use by itself.
 
+const licensedAudioUpload=multer({storage:multer.memoryStorage(),
+  limits:{fileSize:12*1024*1024,files:1,fields:0}});
+router.post("/assets/:id/audio",licensedAudioUpload.single("audio"),
+  async(req:Request,res:Response)=>{
+    const userId=(req as any).auth.userId as string;
+    if(!req.file){res.status(400).json({error:"MP3 or WAV file required"});return;}
+    try{
+      const owned=await sql`SELECT channel_id FROM quiz_studio_assets
+        WHERE id=${req.params.id} AND user_id=${userId} AND asset_kind='music' LIMIT 1`;
+      if(!owned.length){res.status(404).json({error:"Licensed asset not found"});return;}
+      const saved=await storeLicensedAudio(userId,owned[0].channel_id,req.params.id,
+        req.file.buffer,req.file.mimetype);
+      res.status(201).set("Cache-Control","no-store").json(saved);
+    }catch(err){res.status(400).json({error:err instanceof Error?err.message:"Invalid audio"});}
+  });
+router.post("/profiles/:id/music",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  const assetId=req.body?.assetId;
+  if(assetId!==null&&(typeof assetId!=="string"||!/^[a-f0-9-]{36}$/i.test(assetId))){
+    res.status(400).json({error:"Invalid asset selection"});return;
+  }
+  try{
+    const rows=await sql`UPDATE quiz_studio_profiles p SET music_asset_id=${assetId},updated_at=now()
+      WHERE p.id=${req.params.id} AND p.user_id=${userId}
+        AND (${assetId}::uuid IS NULL OR EXISTS (
+          SELECT 1 FROM quiz_studio_assets a WHERE a.id=${assetId}::uuid
+            AND a.user_id=p.user_id AND a.channel_id=p.channel_id
+            AND a.asset_kind='music' AND a.stored_filename IS NOT NULL
+            AND a.revoked_at IS NULL AND a.commercial_use_allowed=true
+            AND a.youtube_use_allowed=true AND (a.expires_at IS NULL OR a.expires_at>now())))
+      RETURNING id,music_asset_id`;
+    if(!rows.length){res.status(409).json({error:"Profile or eligible stored audio unavailable"});return;}
+    res.json(rows[0]);
+  }catch{res.status(500).json({error:"Could not assign music"});}
+});
 router.get("/profiles",async(req:Request,res:Response)=>{
   const userId=(req as any).auth.userId as string;
   try {
