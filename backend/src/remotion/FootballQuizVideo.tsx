@@ -23,12 +23,21 @@ export interface QuizRenderProps extends Record<string, unknown> {
 const GOLD="#edc77c", NAVY="#091827";
 const smooth=(n:number)=>{const x=Math.max(0,Math.min(1,n));return x*x*(3-2*x);};
 
-function Stadium() {
+function StudioBackdrop({templateKey="football_gold"}:{templateKey?:QuizRenderProps["templateKey"]}) {
   const frame=useCurrentFrame();
-  return <AbsoluteFill style={{background:"radial-gradient(ellipse at 50% 0%, #254858, #0a1b2c 60%, #06111b)",overflow:"hidden"}}>
+  const science=templateKey==="science_lab";
+  const history=templateKey==="history_archive";
+  const trivia=templateKey==="general_trivia";
+  const background=science
+    ?"radial-gradient(ellipse at 50% 0%,#165d70,#081d39 60%,#06111d)"
+    :history?"radial-gradient(ellipse at 50% 0%,#6e4a2c,#241c18 60%,#110d0b)"
+    :trivia?"radial-gradient(ellipse at 50% 0%,#453670,#191b3c 60%,#0c1020)"
+    :"radial-gradient(ellipse at 50% 0%, #254858, #0a1b2c 60%, #06111b)";
+  const accent=science?"#65e1df":history?"#dfad73":trivia?"#d0a6fc":"#edc77c";
+  return <AbsoluteFill style={{background,overflow:"hidden"}}>
     <div style={{position:"absolute",width:1100,height:380,left:-220,top:-100,opacity:.25,filter:"blur(38px)",
       transform:`translateX(${Math.sin(frame/120)*65}px) rotate(-25deg)`,
-      background:"linear-gradient(90deg, transparent, #edc77c, transparent)"}}/>
+      background:`linear-gradient(90deg,transparent,${accent},transparent)`}}/>
     <div style={{position:"absolute",width:1100,height:380,right:-220,top:-100,opacity:.2,filter:"blur(38px)",
       transform:`translateX(${Math.sin(frame/120+2)*65}px) rotate(25deg)`,
       background:"linear-gradient(90deg, transparent, #edc77c, transparent)"}}/>
@@ -72,7 +81,7 @@ function QuizFrame({quiz,timeline,templateKey="football_gold"}:{quiz:RenderQuiz;
   const finalTitle=templateKey==="football_gold"?"YOU ARE A FOOTBALL LEGEND":"YOU COMPLETED THE CHALLENGE";
   const title=phase.kind==="intro"?quiz.settings.title:phase.kind==="halftime"?"HOW MANY DID YOU GET?":finalTitle;
   return <AbsoluteFill style={{backgroundColor:NAVY,color:"#f5f7fa",fontFamily:"Arial, sans-serif"}}>
-    <Stadium/>
+    <StudioBackdrop templateKey={templateKey}/>
     <div style={{position:"absolute",inset:75,display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #d6ad6844",paddingBottom:22}}>
         <span style={{fontWeight:900,letterSpacing:5,fontSize:33,color:GOLD}}>{headerIcon} {brand}</span>
