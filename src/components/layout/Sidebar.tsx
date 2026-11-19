@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/youtube", label: "YouTube Connection", icon: Youtube },
   { href: "/scheduler", label: "Upload Scheduler", icon: CalendarClock },
   { href: "/autopilot", label: "Autopilot", icon: Bot },
+  { href: "/autopilot/quiz", label: "AI Quiz Automation", icon: Trophy },
 ];
 
 interface SidebarProps {
