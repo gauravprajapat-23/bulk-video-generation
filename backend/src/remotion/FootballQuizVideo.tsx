@@ -62,7 +62,7 @@ function QuizFrame({quiz,timeline,templateKey="football_gold"}:{quiz:RenderQuiz;
   const remaining=phase.kind==="countdown"?Math.ceil((phase.endFrame-frame)/30):0;
   const countdown=phase.kind==="countdown"?1-p:["entrance","clues"].includes(phase.kind)?1:0;
   const showOptions=["countdown","suspense","reveal","transition"].includes(phase.kind);
-  const titleLabel=phase.kind==="intro"?"THE ULTIMATE CHALLENGE":phase.kind==="halftime"?"HALF-TIME":"FINAL WHISTLE";
+  const titleLabel=phase.kind==="intro"?"THE ULTIMATE CHALLENGE":phase.kind==="halftime"?"HALF-TIME":templateKey==="football_gold"?"FINAL WHISTLE":"CHALLENGE COMPLETE";
   const correct=q?["A","B","C","D"].indexOf(q.correctOption):-1;
   const brand=templateKey==="science_lab"?"SCIENCE LAB":
     templateKey==="history_archive"?"HISTORY ARCHIVE":
@@ -82,7 +82,7 @@ function QuizFrame({quiz,timeline,templateKey="football_gold"}:{quiz:RenderQuiz;
         <div style={{fontSize:118,color:GOLD}}>★</div>
         <div style={{fontSize:27,letterSpacing:10,fontWeight:900,color:GOLD}}>{titleLabel}</div>
         <div style={{fontSize:75,fontWeight:900,maxWidth:1450,lineHeight:1.12}}>{title}</div>
-        <div style={{fontSize:30,color:"#c1d0dd"}}>{phase.kind==="intro"?`${quiz.questions.length} QUESTIONS • GUESS THE LEGENDS`:
+        <div style={{fontSize:30,color:"#c1d0dd"}}>{phase.kind==="intro"?`${quiz.questions.length} QUESTIONS • ${templateKey==="football_gold"?"GUESS THE LEGENDS":"TEST YOUR KNOWLEDGE"}`:
           phase.kind==="halftime"?"Count your answers. The second half gets harder.":`Comment your score out of ${quiz.questions.length}!`}</div>
       </div> : <div style={{flex:1,display:"flex",alignItems:"center",gap:65,opacity:entrance,
         transform:`translateY(${phase.kind==="entrance"?(1-entrance)*38:0}px)`}}>
