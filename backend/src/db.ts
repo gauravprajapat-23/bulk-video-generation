@@ -259,6 +259,21 @@ export async function ensureTables() {
     await sql`CREATE INDEX IF NOT EXISTS idx_quiz_studio_profiles_enabled
       ON quiz_studio_profiles(schedule_time_utc) WHERE enabled=true`;
 
+    // AUTO-QUIZ-03: an explicit review state separate from render/upload completion.
+    // Publication requests are one-shot database claims and never automatically retried.
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS evidence_report JSONB`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'pending'
+      CHECK (review_status IN ('pending','approved','rejected'))`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS reviewed_by TEXT`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS publication_status TEXT NOT NULL DEFAULT 'not_requested'
+      CHECK (publication_status IN ('not_requested','publishing','published','needs_review'))`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS review_note TEXT`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS source_kind TEXT NOT NULL DEFAULT 'ai'
+      CHECK (source_kind IN ('ai','csv'))`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_quiz_jobs_review
+      ON quiz_automation_jobs(user_id,review_status,created_at DESC)`;
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
   } catch (err: any) {
