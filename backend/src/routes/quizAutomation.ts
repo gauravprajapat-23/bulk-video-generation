@@ -24,7 +24,7 @@ router.get("/assets",async(req:Request,res:Response)=>{
   try{
     const rows=await sql`SELECT id,channel_id,asset_kind,label,source_url,license_name,
       license_evidence_url,attribution_text,commercial_use_allowed,youtube_use_allowed,
-      expires_at,revoked_at,created_at FROM quiz_studio_assets
+      expires_at,revoked_at,created_at,stored_filename,content_sha256,size_bytes,mime_type FROM quiz_studio_assets
       WHERE user_id=${userId} ORDER BY created_at DESC LIMIT 100`;
     res.set("Cache-Control","no-store").json(rows);
   }catch{res.status(500).json({error:"Unable to load licensed media ledger"});}
