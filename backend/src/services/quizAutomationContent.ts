@@ -88,7 +88,7 @@ export async function generateAutoQuiz(input:AutoQuizInput):Promise<RenderQuiz>{
   try{
     const response=await fetch("https://api.openai.com/v1/chat/completions",{
       method:"POST",signal:controller.signal,
-      headers:{"Authorization":\`Bearer \${apiKey}\`,"Content-Type":"application/json"},
+      headers:{"Authorization":"Bearer "+apiKey,"Content-Type":"application/json"},
       body:JSON.stringify({
         model:process.env.QUIZ_AI_MODEL||"gpt-4.1-mini",
         temperature:.35,
