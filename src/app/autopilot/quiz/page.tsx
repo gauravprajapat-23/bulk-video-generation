@@ -11,6 +11,11 @@ interface ChannelProfile {
   question_count:number;schedule_mode:string;schedule_time_utc:string;
   publish_policy:string;enabled:boolean;
 }
+interface LicensedAsset {
+  id:string;channel_id:string;asset_kind:string;label:string;license_name:string;
+  commercial_use_allowed:boolean;youtube_use_allowed:boolean;
+  revoked_at:string|null;expires_at:string|null;
+}
 interface AutomationJob {
   id:string;topic:string;niche:string;channel_id:string;status:string;
   progress:number;youtube_video_url:string|null;error_message:string|null;
@@ -33,6 +38,13 @@ export default function QuizAutomationPage(){
   const [channelId,setChannelId]=useState("");
   const [jobs,setJobs]=useState<AutomationJob[]>([]);
   const [profiles,setProfiles]=useState<ChannelProfile[]>([]);
+  const [assets,setAssets]=useState<LicensedAsset[]>([]);
+  const [assetLabel,setAssetLabel]=useState("");
+  const [assetLicense,setAssetLicense]=useState("");
+  const [assetEvidence,setAssetEvidence]=useState("");
+  const [assetCommercial,setAssetCommercial]=useState(false);
+  const [assetYoutube,setAssetYoutube]=useState(false);
+  const [assetBusy,setAssetBusy]=useState(false);
   const [templateKey,setTemplateKey]=useState("general_trivia");
   const [scheduleMode,setScheduleMode]=useState("weekdays");
   const [scheduleTime,setScheduleTime]=useState("13:00");
@@ -53,13 +65,14 @@ export default function QuizAutomationPage(){
   },[]);
   const refresh=useCallback(async()=>{
     try{
-      const [available,queued,savedProfiles]=await Promise.all([
-        authFetch("/youtube/channels"),authFetch("/quiz-automation/jobs"),authFetch("/quiz-automation/profiles"),
+      const [available,queued,savedProfiles,ownedAssets]=await Promise.all([
+        authFetch("/youtube/channels"),authFetch("/quiz-automation/jobs"),authFetch("/quiz-automation/profiles"),authFetch("/quiz-automation/assets"),
       ]);
       setChannels(available);
       setChannelId(current=>current||available?.[0]?.channel_id||"");
       setJobs(queued);
       setProfiles(savedProfiles);
+      setAssets(ownedAssets);
       setReady(true);
     }catch(err){setError(err instanceof Error?err.message:"Unable to load channel or jobs");}
   },[authFetch]);
@@ -115,6 +128,31 @@ export default function QuizAutomationPage(){
       await refresh();
     }catch(err){setError(err instanceof Error?err.message:"Publication needs attention");await refresh();}
     finally{setReviewBusy(null);}
+  }
+  async function registerLicense(){
+    setAssetBusy(true);setError("");
+    try{
+      await authFetch("/quiz-automation/assets",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({channelId,kind:"music",label:assetLabel,
+          sourceUrl:null,licenseName:assetLicense,licenseEvidenceUrl:assetEvidence,
+          attribution:"",commercialUseAllowed:assetCommercial,
+          youtubeUseAllowed:assetYoutube,expiresAt:null}),
+      });
+      setAssetLabel("");setAssetEvidence("");setAssetLicense("");
+      setAssetCommercial(false);setAssetYoutube(false);
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Unable to register license");}
+    finally{setAssetBusy(false);}
+  }
+  async function revokeLicense(asset:LicensedAsset){
+    if(!window.confirm("Revoke this license record? It will no longer be eligible for future use."))return;
+    setAssetBusy(true);setError("");
+    try{
+      await authFetch(`/quiz-automation/assets/${asset.id}/revoke`,{method:"POST"});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Unable to revoke license");}
+    finally{setAssetBusy(false);}
   }
   async function submit(){
     setLoading(true);setError("");
@@ -230,6 +268,29 @@ export default function QuizAutomationPage(){
           <p className="text-xs text-muted">{p.template_key.replaceAll("_"," ")} · {p.schedule_mode} at {p.schedule_time_utc} UTC · {p.publish_policy.replaceAll("_"," ")}</p></div>
         <button type="button" disabled={profileBusy} onClick={()=>void toggleProfile(p,!p.enabled)}
           className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text disabled:opacity-50">{p.enabled?"Pause automation":"Enable automation"}</button>
+      </div>)}
+    </section>
+    <section className="space-y-3 rounded-xl border border-border bg-panel p-5">
+      <h2 className="font-sora text-lg font-semibold text-text">Media rights ledger</h2>
+      <p className="text-xs text-muted">Record evidence for music licensed for your connected channel. This is a rights record, not an upload or licensed-file integration: the renderer does not use assets from this ledger yet. Never use an asset without verifying the actual rights.</p>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <input value={assetLabel} onChange={e=>setAssetLabel(e.target.value)} maxLength={150}
+          placeholder="Asset title" aria-label="Licensed asset title" className="rounded-lg border border-border bg-bg p-2 text-sm text-text"/>
+        <input value={assetLicense} onChange={e=>setAssetLicense(e.target.value)} maxLength={180}
+          placeholder="License name" aria-label="License name" className="rounded-lg border border-border bg-bg p-2 text-sm text-text"/>
+        <input value={assetEvidence} onChange={e=>setAssetEvidence(e.target.value)} maxLength={1000}
+          placeholder="https:// license evidence" aria-label="License evidence URL" className="rounded-lg border border-border bg-bg p-2 text-sm text-text"/>
+      </div>
+      <div className="flex flex-wrap gap-4 text-xs text-muted">
+        <label className="flex items-center gap-2"><input type="checkbox" checked={assetCommercial} onChange={e=>setAssetCommercial(e.target.checked)}/> Commercial use granted</label>
+        <label className="flex items-center gap-2"><input type="checkbox" checked={assetYoutube} onChange={e=>setAssetYoutube(e.target.checked)}/> YouTube use granted</label>
+      </div>
+      <button type="button" disabled={assetBusy||!channelId||!assetLabel||!assetLicense||!assetEvidence} onClick={()=>void registerLicense()}
+        className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text disabled:opacity-50">Register license evidence</button>
+      {assets.filter(a=>a.channel_id===channelId).map(a=><div key={a.id} className="flex items-center justify-between gap-3 rounded-lg border border-border p-3 text-xs">
+        <span className="text-text">{a.label} · {a.license_name} · {a.revoked_at?"Revoked":a.commercial_use_allowed&&a.youtube_use_allowed?"Rights declared":"Restricted"}</span>
+        {!a.revoked_at&&<button type="button" disabled={assetBusy} onClick={()=>void revokeLicense(a)}
+          className="text-red-300 disabled:opacity-50">Revoke</button>}
       </div>)}
     </section>
     <section className="space-y-3 rounded-xl border border-border bg-panel p-5">
