@@ -9,7 +9,7 @@ import { dueStudioSlot, type QuizScheduleMode } from "./quizStudioPolicy";
 export async function enqueueDueStudioVideos(now=new Date()):Promise<number>{
   if(process.env.QUIZ_AUTOMATION_ENABLED!=="true"||process.env.QUIZ_STUDIO_SCHEDULING_ENABLED!=="true")return 0;
   const profiles=await sql`SELECT id,user_id,channel_id,niche,topic,template_key,question_count,
-    schedule_mode,schedule_time_utc,publish_policy,enabled
+    schedule_mode,schedule_time_utc,publish_policy,enabled,music_asset_id
     FROM quiz_studio_profiles WHERE enabled=true AND schedule_time_utc=${now.toISOString().slice(11,16)}
     ORDER BY updated_at ASC LIMIT 25`;
   let queued=0;
@@ -24,11 +24,11 @@ export async function enqueueDueStudioVideos(now=new Date()):Promise<number>{
       const inserted=await sql`
         INSERT INTO quiz_automation_jobs
           (user_id,channel_id,niche,topic,csv_source,question_count,
-           output_visibility,status,profile_id,scheduled_slot,template_key)
+           output_visibility,status,profile_id,scheduled_slot,template_key,music_asset_id)
         SELECT p.user_id,p.channel_id,p.niche,
           LEFT(p.topic || ' — ' || ${slot},120),NULL,p.question_count,
           CASE WHEN p.publish_policy='unlisted_review' THEN 'unlisted' ELSE 'private' END,
-          'queued',p.id,${slot},p.template_key
+          'queued',p.id,${slot},p.template_key,p.music_asset_id
         FROM quiz_studio_profiles p
         WHERE p.id=${p.id} AND p.enabled=true
           AND EXISTS (SELECT 1 FROM user_youtube_tokens u
