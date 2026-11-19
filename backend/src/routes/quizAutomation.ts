@@ -3,6 +3,7 @@ import multer from "multer";
 import { requireAuth } from "../middleware/auth";
 import sql from "../db";
 import { makeAutoQuizFromCsv, validateAutoQuizInput } from "../services/quizAutomationContent";
+import { validateStudioProfile } from "../services/quizStudioPolicy";
 
 const router=Router();
 router.use(requireAuth);
@@ -13,6 +14,60 @@ const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:100_000,fil
     }
     callback(null,true);
   },
+});
+
+router.get("/profiles",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  try {
+    const rows=await sql`SELECT id,channel_id,niche,topic,template_key,question_count,
+      schedule_mode,schedule_time_utc,publish_policy,enabled,updated_at
+      FROM quiz_studio_profiles WHERE user_id=${userId} ORDER BY updated_at DESC`;
+    res.set("Cache-Control","no-store").json(rows);
+  }catch{res.status(500).json({error:"Unable to load channel profiles"});}
+});
+
+router.post("/profiles",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  try{
+    const p=validateStudioProfile(req.body);
+    if(p.enabled && (!process.env.OPENAI_API_KEY || process.env.QUIZ_STUDIO_SCHEDULING_ENABLED!=="true")){
+      res.status(503).json({error:"AI provider and recurring scheduler must be configured before enabling"});return;
+    }
+    const rows=await sql`INSERT INTO quiz_studio_profiles
+      (user_id,channel_id,niche,topic,template_key,question_count,
+        schedule_mode,schedule_time_utc,publish_policy,enabled)
+      SELECT ${userId},${p.channelId},${p.niche},${p.topic},${p.template},
+        ${p.questionCount},${p.scheduleMode},${p.scheduleTimeUtc},${p.publishPolicy},${p.enabled}
+      WHERE EXISTS (SELECT 1 FROM user_youtube_tokens
+        WHERE user_id=${userId} AND channel_id=${p.channelId} AND refresh_token IS NOT NULL)
+      ON CONFLICT (user_id,channel_id) DO UPDATE SET
+        niche=EXCLUDED.niche,topic=EXCLUDED.topic,template_key=EXCLUDED.template_key,
+        question_count=EXCLUDED.question_count,schedule_mode=EXCLUDED.schedule_mode,
+        schedule_time_utc=EXCLUDED.schedule_time_utc,publish_policy=EXCLUDED.publish_policy,
+        enabled=EXCLUDED.enabled,updated_at=now()
+      RETURNING id,channel_id,niche,topic,template_key,question_count,
+        schedule_mode,schedule_time_utc,publish_policy,enabled`;
+    if(!rows.length){res.status(403).json({error:"Authorize this YouTube channel first"});return;}
+    res.status(201).json(rows[0]);
+  }catch(err){res.status(400).json({error:err instanceof Error?err.message:"Invalid channel profile"});}
+});
+
+router.patch("/profiles/:id/state",async(req:Request,res:Response)=>{
+  const userId=(req as any).auth.userId as string;
+  if(typeof req.body?.enabled!=="boolean"){res.status(400).json({error:"Boolean enabled required"});return;}
+  if(req.body.enabled && (!process.env.OPENAI_API_KEY || process.env.QUIZ_STUDIO_SCHEDULING_ENABLED!=="true")){
+    res.status(503).json({error:"AI provider and scheduler are not configured"});return;
+  }
+  try{
+    const rows=await sql`UPDATE quiz_studio_profiles p SET enabled=${req.body.enabled},updated_at=now()
+      WHERE p.id=${req.params.id} AND p.user_id=${userId}
+        AND (NOT ${req.body.enabled} OR EXISTS (
+          SELECT 1 FROM user_youtube_tokens u WHERE u.user_id=p.user_id
+            AND u.channel_id=p.channel_id AND u.refresh_token IS NOT NULL))
+      RETURNING id,enabled`;
+    if(!rows.length){res.status(404).json({error:"Profile missing or channel disconnected"});return;}
+    res.json(rows[0]);
+  }catch{res.status(500).json({error:"Unable to change profile status"});}
 });
 
 router.post("/jobs",upload.single("csv"),async(req:Request,res:Response)=>{
