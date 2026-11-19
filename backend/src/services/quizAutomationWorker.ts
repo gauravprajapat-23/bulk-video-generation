@@ -127,6 +127,11 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering' AND worker_lease_expires_at>now() RETURNING id`;
     if(uploadClaim.length!==1)throw new Error('Lost worker claim before upload');
 
+    // A creator may revoke/expire a music license during the long render.
+    // In that case, never upload the newly rendered video.
+    if(job.music_asset_id){
+      await loadLicensedAudioForJob(job.user_id,job.channel_id,job.music_asset_id);
+    }
     const connected=await sql`SELECT channel_id FROM user_youtube_tokens
       WHERE user_id=${job.user_id} AND channel_id=${job.channel_id}
         AND refresh_token IS NOT NULL LIMIT 1`;
