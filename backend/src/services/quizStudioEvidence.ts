@@ -1,4 +1,5 @@
 import type {RenderQuiz} from "./quizRenderValidation";
+import {parseAutoQuizCsv} from "./quizAutomationContent";
 
 export interface QuizEvidenceItem {
   questionId:string;
@@ -25,7 +26,6 @@ export function buildQuizEvidenceReport(quiz:RenderQuiz,csv:string|null):QuizEvi
   if(csv){
     // Reuse the same bounded CSV reader used to build the quiz.
     // Import here only when evidence is requested, not on scheduler load.
-    const {parseAutoQuizCsv}=require("./quizAutomationContent") as typeof import("./quizAutomationContent");
     const rows=parseAutoQuizCsv(csv);
     for(const row of rows){
       const url=row.source||"";
