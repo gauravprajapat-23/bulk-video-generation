@@ -9,6 +9,7 @@ export interface StudioMediaQA {
   width:number;height:number;sizeBytes:number;
   audioCodec:string|null;peakDb:number|null;meanDb:number|null;
   checks:string[];warnings:string[];
+  sampledLuma:number[];
 }
 export async function inspectStudioMp4(file:string,expectedSeconds:number):Promise<StudioMediaQA>{
   const meta=await getVideoMetadata(file);
@@ -23,6 +24,24 @@ export async function inspectStudioMp4(file:string,expectedSeconds:number):Promi
   if(!meta.audioCodec)checks.push("Missing audio track");
   if(stat.size<1024*1024)checks.push("Unexpectedly small video file");
 
+  const sampledLuma:number[]=[];
+  if(process.env.QUIZ_STUDIO_FRAME_QA_ENABLED==="true"){
+    const positions=[.12,.5,.86].map(x=>Math.max(1,Math.min(expectedSeconds-1,expectedSeconds*x)));
+    for(const pos of positions){
+      try{
+        const {stdout,stderr}=await execFileAsync(process.env.FFMPEG_PATH||"ffmpeg",[
+          "-hide_banner","-nostdin","-ss",pos.toFixed(2),"-i",file,
+          "-frames:v","1","-vf","scale=320:180,signalstats,metadata=print:file=-",
+          "-f","null","-",
+        ],{timeout:30_000,maxBuffer:500_000,windowsHide:true});
+        const sample=/lavfi\.signalstats\.YAVG=([\d.]+)/.exec(stdout+"\n"+stderr);
+        if(!sample)throw new Error("Missing image luma");
+        const value=Number(sample[1]);
+        sampledLuma.push(value);
+        if(value<7||value>248)checks.push("Representative frame is black/blank/overexposed");
+      }catch{checks.push("Representative frame verification unavailable");}
+    }
+  }else warnings.push("Representative frame analysis disabled");
   let peakDb:number|null=null,meanDb:number|null=null;
   if(process.env.QUIZ_STUDIO_AUDIO_QA_ENABLED==="true"){
     try{
@@ -44,5 +63,5 @@ export async function inspectStudioMp4(file:string,expectedSeconds:number):Promi
   }else warnings.push("FFmpeg loudness QA disabled; waveform not inspected");
   return {passed:checks.length===0,durationSeconds:duration,fps:meta.fps,
     width:meta.width,height:meta.height,sizeBytes:stat.size,
-    audioCodec:meta.audioCodec||null,peakDb,meanDb,checks,warnings};
+    audioCodec:meta.audioCodec||null,peakDb,meanDb,checks,warnings,sampledLuma};
 }
