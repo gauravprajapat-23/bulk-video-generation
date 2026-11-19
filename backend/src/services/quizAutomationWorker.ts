@@ -14,11 +14,12 @@ import { buildQuizEvidenceReport } from "./quizStudioEvidence";
 import { generateTimedStudioSpeech } from "./quizStudioSpeech";
 import { corroborateStudioQuiz } from "./quizStudioFactCheck";
 import { inspectStudioMp4 } from "./quizStudioMediaQA";
+import {loadLicensedAudioForJob} from "./quizStudioAssetStorage";
 
 export interface AutoQuizJob {
   id:string; user_id:string; channel_id:string; niche:string; topic:string;
   csv_source:string|null; question_count:number; output_visibility:"private"|"unlisted";
-  template_key: QuizStudioTemplate;
+  template_key: QuizStudioTemplate; music_asset_id:string|null;
 }
 let processing=false;
 const MAX_RENDER_MS=45*60_000;
@@ -45,7 +46,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       worker_claim_id=${claimId},worker_heartbeat_at=now(),
       status='generating', started_at=now(), updated_at=now(),progress=2
     WHERE id=${id} AND status='queued'
-    RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,template_key`;
+    RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,template_key,music_asset_id`;
   if(claimed.length!==1)return false;
   const job=claimed[0] as AutoQuizJob;
   let tmpDir:string|null=null;
@@ -82,10 +83,11 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     tmpDir=await fs.mkdtemp(path.join(os.tmpdir(),"auto-quiz-"));
     const output=path.join(tmpDir,"quiz.mp4");
     const speechCues=await generateTimedStudioSpeech(quiz,timeline,tmpDir);
+    const licensedMusic=job.music_asset_id ? await loadLicensedAudioForJob(job.user_id,job.channel_id,job.music_asset_id):null;
     const props:QuizRenderProps={
       quiz,timeline,templateKey:job.template_key,
-      audio:{musicData:null,narrationData:null,musicVolume:0,
-        effectsVolume:.4,ducking:1,ticksEnabled:true,effectsEnabled:true,
+      audio:{musicData:licensedMusic?.dataUri??null,narrationData:null,musicVolume:licensedMusic?0.25:0,
+        effectsVolume:.4,ducking:0.35,ticksEnabled:true,effectsEnabled:true,
         toneData:quizToneData,speechCues,voiceVolume:speechCues.length>0?0.85:0},
     };
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
