@@ -134,13 +134,13 @@ export async function runGuestRender(
     const expectedDuration=timeline.totalFrames/timeline.fps;
     if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
       Math.abs(metadata.fps-30)>.2 ||
-      !Number.isFinite(metadata.durationInSeconds) || Math.abs(metadata.durationInSeconds-expectedDuration)>.25) {
+      (typeof metadata.durationInSeconds !== "number" || !Number.isFinite(metadata.durationInSeconds)) ||\n      Math.abs((metadata.durationInSeconds ?? 0)-expectedDuration)>.25) {
       throw new Error("Rendered file failed FPS, dimensions, codec or duration integrity gate");
     }
     if((audioConfig.effectsEnabled || audioConfig.ticksEnabled || audioConfig.musicEnabled || audioConfig.voiceEnabled) &&
       !metadata.audioCodec) throw new Error("Audio tracks requested but MP4 has no audio stream");
     job.durationSeconds=metadata.durationInSeconds;
-    if(job.status==="cancelled") {await fsp.rm(target,{force:true});return;}
+    if(getGuestRenderJob(job.id)?.status==="cancelled") {await fsp.rm(target,{force:true});return;}
     job.output=target;job.progress=100;job.status="completed";
   } catch(err) {
     if(job.status!=="cancelled") {
