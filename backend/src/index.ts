@@ -18,6 +18,7 @@ import automationRoutes from "./routes/automation";
 import uploadRoutes from "./routes/upload";
 import autopilotRoutes from "./routes/autopilot";
 import quizRenderRoutes from "./routes/quizRender";
+import quizAutomationRoutes from "./routes/quizAutomation";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "4000", 10);
@@ -92,6 +93,7 @@ app.use("/api/media", uploadRoutes);
 app.use("/api/autopilot", autopilotRoutes);
 // Explicitly opt-in; anonymous CPU-intensive rendering is disabled by default.
 app.use("/api/quiz-render", quizRenderRoutes);
+app.use("/api/quiz-automation", quizAutomationRoutes);
 
 async function start() {
   await ensureTables();
