@@ -187,7 +187,7 @@ export default function QuizAutomationPage(){
     </div>
     <section className="space-y-4 rounded-xl border border-border bg-panel p-5">
       <h2 className="font-sora text-xl font-bold text-text">Recurring channel studio</h2>
-      <p className="text-sm text-muted">Save a channel profile to generate a new AI quiz at the specified UTC time. Each scheduled video is private or unlisted for owner review; the app never publishes directly to the public.</p>
+      <p className="text-sm text-muted">Save a channel profile to generate a new AI quiz at the specified UTC time. Each scheduled video is private or unlisted for review. Public publication requires separate approval and a server-enabled, explicitly confirmed action.</p>
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="space-y-1 text-sm text-muted">Visual identity
           <select value={templateKey} onChange={e=>setTemplateKey(e.target.value)}
@@ -222,7 +222,7 @@ export default function QuizAutomationPage(){
         <button type="button" disabled={profileBusy||!channelId} onClick={()=>void saveProfile(true)}
           className="rounded-lg bg-accent px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Save & enable schedule</button>
       </div>
-      <p className="text-xs text-muted">Enabling requires server-side AI configuration and the recurring scheduler switch. Profiles are tied to the selected connected YouTube channel. A verified AI fact-checking service is not yet integrated.</p>
+      <p className="text-xs text-muted">Enabling requires server-side AI and scheduling configuration. Optional server TTS may incur per-video costs. Factual checks remain creator-reviewed; only original graphic backgrounds are included, and externally licensed music/images are not yet integrated. To publish publicly, reconnect your YouTube channel with video-update permission.</p>
       {profiles.map(p=><div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-bg p-3">
         <div><p className="text-sm font-semibold text-text">{p.topic}</p>
           <p className="text-xs text-muted">{p.template_key.replaceAll("_"," ")} · {p.schedule_mode} at {p.schedule_time_utc} UTC · {p.publish_policy.replaceAll("_"," ")}</p></div>
