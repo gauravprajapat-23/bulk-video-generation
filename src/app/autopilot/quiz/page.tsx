@@ -15,6 +15,10 @@ interface AutomationJob {
   id:string;topic:string;niche:string;channel_id:string;status:string;
   progress:number;youtube_video_url:string|null;error_message:string|null;
   created_at:string;
+  review_status?:"pending"|"approved"|"rejected";
+  publication_status?:"not_requested"|"publishing"|"published"|"needs_review";
+  evidence_report?:{verified:false;withSources:number;count:number;warning:string};
+  quality_report?:{passed:boolean;reasons:string[]};
 }
 const API=process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -32,6 +36,7 @@ export default function QuizAutomationPage(){
   const [scheduleTime,setScheduleTime]=useState("13:00");
   const [publishPolicy,setPublishPolicy]=useState("private_review");
   const [profileBusy,setProfileBusy]=useState(false);
+  const [reviewBusy,setReviewBusy]=useState<string|null>(null);
   const [error,setError]=useState("");
   const [loading,setLoading]=useState(false);
   const [ready,setReady]=useState(false);
@@ -81,6 +86,33 @@ export default function QuizAutomationPage(){
       await refresh();
     }catch(err){setError(err instanceof Error?err.message:"Could not change schedule");}
     finally{setProfileBusy(false);}
+  }
+  async function reviewJob(job:AutomationJob,decision:"approve"|"reject"){
+    setReviewBusy(job.id);setError("");
+    try{
+      if(decision==="approve"){
+        const ok=window.confirm("I have checked question accuracy, rights, narration, video quality and the private YouTube upload. Approve for a separate publication decision?");
+        if(!ok)return;
+      }
+      await authFetch(`/quiz-automation/jobs/${job.id}/review`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({decision})});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Unable to save review");}
+    finally{setReviewBusy(null);}
+  }
+  async function publishJob(job:AutomationJob){
+    if(job.review_status!=="approved")return;
+    const ok=window.confirm("This will make the video PUBLIC on the selected YouTube channel. Continue?");
+    if(!ok)return;
+    setReviewBusy(job.id);setError("");
+    try{
+      await authFetch(`/quiz-automation/jobs/${job.id}/publish`,{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({confirmation:"PUBLISH_PUBLIC"})});
+      await refresh();
+    }catch(err){setError(err instanceof Error?err.message:"Publication needs attention");await refresh();}
+    finally{setReviewBusy(null);}
   }
   async function submit(){
     setLoading(true);setError("");
@@ -212,6 +244,26 @@ export default function QuizAutomationPage(){
         <div className="mt-2 h-2 rounded-full bg-panel2"><div className="h-full rounded-full bg-accent"
           style={{width:`${Math.max(0,Math.min(100,job.progress))}%`}}/></div>
         {job.error_message&&<p className="mt-2 text-xs text-red-300">{job.error_message}</p>}
+        {job.quality_report&&<p className="mt-2 text-xs text-muted">
+          Structural quality: {job.quality_report.passed?"Passed":"Review needed"}
+        </p>}
+        {job.evidence_report&&<p className="mt-1 text-xs text-amber-300">
+          Factual verification: human review required · {job.evidence_report.withSources}/{job.evidence_report.count} supplied source links (not independently verified)
+        </p>}
+        {job.status==="completed"&&<div className="mt-3 space-y-2">
+          <p className="text-xs text-muted">Review: {job.review_status||"pending"} · Publication: {job.publication_status||"not_requested"}</p>
+          {(!job.review_status||job.review_status==="pending")&&<div className="flex gap-2">
+            <button type="button" disabled={reviewBusy===job.id} onClick={()=>void reviewJob(job,"approve")}
+              className="rounded-lg border border-emerald-600 px-3 py-2 text-xs font-semibold text-emerald-300 disabled:opacity-50">Approve reviewed video</button>
+            <button type="button" disabled={reviewBusy===job.id} onClick={()=>void reviewJob(job,"reject")}
+              className="rounded-lg border border-red-600 px-3 py-2 text-xs font-semibold text-red-300 disabled:opacity-50">Reject</button>
+          </div>}
+          {job.review_status==="approved"&&(job.publication_status||"not_requested")==="not_requested"&&
+            <button type="button" disabled={reviewBusy===job.id} onClick={()=>void publishJob(job)}
+              className="rounded-lg border border-amber-500 px-3 py-2 text-xs font-semibold text-amber-200 disabled:opacity-50">Publish publicly (separate confirmation)</button>}
+          {job.publication_status==="needs_review"&&<p className="text-xs text-amber-300">YouTube update outcome may be uncertain. Check Studio before any further action.</p>}
+        </div>}
+
         {job.youtube_video_url&&<a href={job.youtube_video_url} target="_blank" rel="noopener noreferrer"
           className="mt-2 inline-block text-xs text-accent hover:underline">Open uploaded video on YouTube</a>}
       </div>)}
