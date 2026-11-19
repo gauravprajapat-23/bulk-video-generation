@@ -1,7 +1,8 @@
 import fs from "node:fs/promises";
+import {randomUUID} from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { getVideoMetadata, makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
+import { makeCancelSignal, renderMedia, selectComposition } from "@remotion/renderer";
 import sql from "../db";
 import type { QuizRenderProps } from "../remotion/FootballQuizVideo";
 import { generateAutoQuiz } from "./quizAutomationContent";
@@ -11,6 +12,8 @@ import { uploadVideoForUser } from "./youtubeUpload";
 import { generateStudioMetadata, inspectStudioQuiz, type QuizStudioTemplate } from "./quizStudioPolicy";
 import { buildQuizEvidenceReport } from "./quizStudioEvidence";
 import { generateTimedStudioSpeech } from "./quizStudioSpeech";
+import { corroborateStudioQuiz } from "./quizStudioFactCheck";
+import { inspectStudioMp4 } from "./quizStudioMediaQA";
 
 export interface AutoQuizJob {
   id:string; user_id:string; channel_id:string; niche:string; topic:string;
@@ -37,7 +40,9 @@ export async function processQueuedQuizAutomations():Promise<void> {
 }
 
 export async function processQuizAutomationJob(id:string):Promise<boolean> {
+  const claimId=randomUUID();
   const claimed=await sql`UPDATE quiz_automation_jobs SET
+      worker_claim_id=${claimId},worker_heartbeat_at=now(),
       status='generating', started_at=now(), updated_at=now(),progress=2
     WHERE id=${id} AND status='queued'
     RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,template_key`;
@@ -46,6 +51,14 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
   let tmpDir:string|null=null;
   let uploadMayHaveSucceeded=false;
   const {cancelSignal,cancel}=makeCancelSignal();
+  const leaseHeartbeat=setInterval(()=>{
+    void sql`UPDATE quiz_automation_jobs SET worker_heartbeat_at=now(),updated_at=now()
+      WHERE id=${job.id} AND worker_claim_id=${claimId}
+        AND status IN ('generating','rendering','uploading')`.catch(err=>{
+      console.warn("[quiz-auto] heartbeat failure",job.id,err);
+    });
+  },30_000);
+  leaseHeartbeat.unref();
   const timeout=setTimeout(()=>cancel(),MAX_RENDER_MS);
   timeout.unref();
   try{
@@ -56,12 +69,16 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const {timeline}=parseRenderQuiz(quiz);
     const quality=inspectStudioQuiz(quiz);
     const evidence=buildQuizEvidenceReport(quiz,job.csv_source);
+    const sourceCheck=process.env.QUIZ_STUDIO_SOURCE_CHECK_ENABLED==="true"
+      ?await corroborateStudioQuiz(quiz):null;
     await sql`UPDATE quiz_automation_jobs SET quality_report=${JSON.stringify(quality)}::jsonb,
-      evidence_report=${JSON.stringify(evidence)}::jsonb, updated_at=now() WHERE id=${job.id} AND status='generating'`;
+      evidence_report=${JSON.stringify(evidence)}::jsonb,
+      source_check_report=${sourceCheck?JSON.stringify(sourceCheck):null}::jsonb,
+      updated_at=now() WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='generating'`;
     if(!quality.passed)throw new Error("Content quality gate: "+quality.reasons.join("; ").slice(0,500));
     const serveUrl=await getBundledQuiz();
     await sql`UPDATE quiz_automation_jobs SET status='rendering',progress=10,updated_at=now()
-      WHERE id=${job.id} AND status='generating'`;
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='generating'`;
     tmpDir=await fs.mkdtemp(path.join(os.tmpdir(),"auto-quiz-"));
     const output=path.join(tmpDir,"quiz.mp4");
     const speechCues=await generateTimedStudioSpeech(quiz,timeline,tmpDir);
@@ -74,14 +91,6 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
     if(composition.durationInFrames!==timeline.totalFrames||composition.width!==1920||
       composition.height!==1080||composition.fps!==30)throw new Error("Unexpected Remotion quiz composition");
-    // Heartbeat avoids falsely quarantining a healthy long 1080p render.
-    const heartbeat=setInterval(()=>{
-      void sql`UPDATE quiz_automation_jobs SET updated_at=now()
-        WHERE id=${job.id} AND status='rendering'`.catch(err=>{
-        console.warn("[quiz-auto] heartbeat failed",job.id,err);
-      });
-    },60_000);
-    heartbeat.unref();
     let lastPercent=10;
     let progressWrite:Promise<unknown>=Promise.resolve();
     try {
@@ -95,20 +104,20 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
         lastPercent=next;
         progressWrite=progressWrite.then(()=>sql`UPDATE quiz_automation_jobs
           SET progress=${next},updated_at=now()
-          WHERE id=${job.id} AND status='rendering'`).catch(err=>{
+          WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering'`).catch(err=>{
           console.warn("[quiz-auto] progress persistence warning",job.id,err);
         });
       },
     });
     await progressWrite;
-    } finally { clearInterval(heartbeat); }
-    const metadata=await getVideoMetadata(output);
-    const duration=metadata.durationInSeconds;
-    if(metadata.codec!=="h264" || metadata.width!==1920 || metadata.height!==1080 ||
-      typeof duration!=="number" || Math.abs(duration-timeline.totalFrames/30)>.3 ||
-      !metadata.audioCodec)throw new Error("Rendered quiz failed video/audio integrity checks");
-    await sql`UPDATE quiz_automation_jobs SET status='uploading',progress=90,updated_at=now()
-      WHERE id=${job.id} AND status='rendering'`;
+    } finally { /* global worker heartbeat stays active through upload */ }
+    const mediaQA=await inspectStudioMp4(output,timeline.totalFrames/30);
+    await sql`UPDATE quiz_automation_jobs SET media_qa_report=${JSON.stringify(mediaQA)}::jsonb
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering'`;
+    if(!mediaQA.passed)throw new Error("MP4 quality gate: "+mediaQA.checks.join("; "));
+    const uploadClaim=await sql`UPDATE quiz_automation_jobs SET status='uploading',progress=90,updated_at=now()
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='rendering' RETURNING id`;
+    if(uploadClaim.length!==1)throw new Error('Lost worker claim before upload');
 
     const connected=await sql`SELECT channel_id FROM user_youtube_tokens
       WHERE user_id=${job.user_id} AND channel_id=${job.channel_id}
@@ -126,7 +135,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     await sql`UPDATE quiz_automation_jobs SET
       youtube_video_id=${uploaded.youtubeVideoId},youtube_video_url=${uploaded.youtubeVideoUrl},
       status='completed',progress=100,completed_at=now(),updated_at=now()
-      WHERE id=${job.id} AND status='uploading'`;
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status='uploading'`;
     uploadMayHaveSucceeded=false;
     return true;
   }catch(err){
@@ -135,9 +144,10 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
     const nextStatus=uploadMayHaveSucceeded?"needs_review":"failed";
     await sql`UPDATE quiz_automation_jobs SET status=${nextStatus},
       error_message=${message.slice(0,1000)},updated_at=now()
-      WHERE id=${job.id} AND status IN ('generating','rendering','uploading')`;
+      WHERE id=${job.id} AND worker_claim_id=${claimId} AND status IN ('generating','rendering','uploading')`;
     return false;
   }finally{
+    clearInterval(leaseHeartbeat);
     clearTimeout(timeout);
     if(tmpDir)await fs.rm(tmpDir,{recursive:true,force:true}).catch(()=>{});
   }
