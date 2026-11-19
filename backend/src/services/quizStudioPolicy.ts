@@ -24,13 +24,13 @@ export function validateStudioProfile(input:unknown):StudioProfileInput {
   if(typeof p.niche!=="string"||p.niche.trim().length<3||p.niche.length>250)throw new Error("Niche must be 3–250 characters");
   if(typeof p.topic!=="string"||!p.topic.trim()||p.topic.length>110)throw new Error("Topic must be 1–110 characters");
   if(typeof p.template!=="string"||!templates.has(p.template))throw new Error("Unsupported template");
-  if(!Number.isInteger(p.questionCount)||p.questionCount!<5||p.questionCount!>20)throw new Error("Question count must be 5–20");
+  if(typeof p.questionCount!=="number"||!Number.isInteger(p.questionCount)||p.questionCount<5||p.questionCount>20)throw new Error("Question count must be 5–20");
   if(typeof p.scheduleMode!=="string"||!scheduleModes.has(p.scheduleMode))throw new Error("Invalid schedule mode");
   if(typeof p.scheduleTimeUtc!=="string"||!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(p.scheduleTimeUtc))throw new Error("Schedule must be UTC HH:MM");
   if(typeof p.publishPolicy!=="string"||!publishPolicies.has(p.publishPolicy))throw new Error("Invalid publication policy");
   if(typeof p.enabled!=="boolean")throw new Error("Invalid enabled state");
   return {channelId:p.channelId.trim(),niche:p.niche.trim(),topic:p.topic.trim(),
-    template:p.template as QuizStudioTemplate,questionCount:p.questionCount!,
+    template:p.template as QuizStudioTemplate,questionCount:p.questionCount,
     scheduleMode:p.scheduleMode as QuizScheduleMode,scheduleTimeUtc:p.scheduleTimeUtc,
     publishPolicy:p.publishPolicy as QuizPublishPolicy,enabled:p.enabled};
 }
