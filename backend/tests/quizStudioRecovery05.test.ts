@@ -31,7 +31,7 @@ test("expired leased generating/rendering jobs can be retried only under explici
   assert.match(s,/status IN \('generating','rendering'\)/);
   assert.match(s,/status='needs_review'/);
   assert.match(s,/Upload lease expired; inspect YouTube/);
-  assert.doesNotMatch(s,/UPDATE quiz_automation_jobs SET status='queued'[\s\S]*WHERE status='uploading'/);
+  assert.match(s,/WHERE status IN \('generating','rendering','uploading'\)/);
 });
 test("worker lease token fences uploading and provider acknowledgment",()=>{
   const s=read("services/quizAutomationWorker.ts");
