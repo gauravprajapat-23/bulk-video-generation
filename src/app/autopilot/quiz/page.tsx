@@ -19,6 +19,8 @@ interface AutomationJob {
   publication_status?:"not_requested"|"publishing"|"published"|"needs_review";
   evidence_report?:{verified:false;withSources:number;count:number;warning:string};
   quality_report?:{passed:boolean;reasons:string[]};
+  source_check_report?:{independentlyVerified:false;status:string;items:{status:string;sourceUrl:string|null}[]};
+  media_qa_report?:{passed:boolean;checks:string[];warnings:string[];durationSeconds:number;peakDb:number|null};
 }
 const API=process.env.NEXT_PUBLIC_API_BASE_URL;
 
@@ -244,6 +246,14 @@ export default function QuizAutomationPage(){
         <div className="mt-2 h-2 rounded-full bg-panel2"><div className="h-full rounded-full bg-accent"
           style={{width:`${Math.max(0,Math.min(100,job.progress))}%`}}/></div>
         {job.error_message&&<p className="mt-2 text-xs text-red-300">{job.error_message}</p>}
+        {job.source_check_report&&<p className="mt-2 text-xs text-amber-300">
+          Independent source search: {job.source_check_report.items.filter(x=>x.status==="candidate_found").length}/{job.source_check_report.items.length} candidate matches. None are proof; manually verify all answers.
+        </p>}
+        {job.media_qa_report&&<p className="mt-2 text-xs text-muted">
+          MP4 QA: {job.media_qa_report.passed?"Passed":"Failed"} · {Number(job.media_qa_report.durationSeconds).toFixed(1)}s
+          {job.media_qa_report.checks.length>0?" · "+job.media_qa_report.checks.join("; "):""}
+          {job.media_qa_report.warnings.length>0?" · "+job.media_qa_report.warnings.join("; "):""}
+        </p>}
         {job.quality_report&&<p className="mt-2 text-xs text-muted">
           Structural quality: {job.quality_report.passed?"Passed":"Review needed"}
         </p>}
