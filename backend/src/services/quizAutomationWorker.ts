@@ -69,7 +69,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       quiz,timeline,templateKey:job.template_key,
       audio:{musicData:null,narrationData:null,musicVolume:0,
         effectsVolume:.4,ducking:1,ticksEnabled:true,effectsEnabled:true,
-        toneData:quizToneData,speechCues,voiceVolume:speechCues.length?.85:0},
+        toneData:quizToneData,speechCues,voiceVolume:speechCues.length>0?0.85:0},
     };
     const composition=await selectComposition({serveUrl,id:"FootballLegendsQuiz",inputProps:props});
     if(composition.durationInFrames!==timeline.totalFrames||composition.width!==1920||
