@@ -5,6 +5,7 @@ import type { RenderQuiz, RenderQuizTimeline } from "../services/quizRenderValid
 export interface QuizRenderProps extends Record<string, unknown> {
   quiz: RenderQuiz;
   timeline: RenderQuizTimeline;
+  templateKey?: "football_gold" | "general_trivia" | "science_lab" | "history_archive";
   audio: {
     musicData: string | null;
     narrationData: string | null;
@@ -47,7 +48,7 @@ function Silhouette({revealed, progress}:{revealed:boolean;progress:number}) {
   </div>;
 }
 
-function QuizFrame({quiz,timeline}:{quiz:RenderQuiz;timeline:RenderQuizTimeline}) {
+function QuizFrame({quiz,timeline,templateKey="football_gold"}:{quiz:RenderQuiz;timeline:RenderQuizTimeline;templateKey?:QuizRenderProps["templateKey"]}) {
   const frame=useCurrentFrame();
   const phase=timeline.phases.find(p=>frame>=p.startFrame&&frame<p.endFrame)
     ?? timeline.phases[timeline.phases.length-1];
@@ -61,15 +62,20 @@ function QuizFrame({quiz,timeline}:{quiz:RenderQuiz;timeline:RenderQuizTimeline}
   const remaining=phase.kind==="countdown"?Math.ceil((phase.endFrame-frame)/30):0;
   const countdown=phase.kind==="countdown"?1-p:["entrance","clues"].includes(phase.kind)?1:0;
   const showOptions=["countdown","suspense","reveal","transition"].includes(phase.kind);
-  const title=phase.kind==="intro"?quiz.settings.title:phase.kind==="halftime"?"HOW MANY DID YOU GET?":"YOU ARE A FOOTBALL LEGEND";
+  const title=phase.kind==="intro"?quiz.settings.title:phase.kind==="halftime"?"HOW MANY DID YOU GET?":finalTitle;
   const titleLabel=phase.kind==="intro"?"THE ULTIMATE CHALLENGE":phase.kind==="halftime"?"HALF-TIME":"FINAL WHISTLE";
   const correct=q?["A","B","C","D"].indexOf(q.correctOption):-1;
+  const brand=templateKey==="science_lab"?"SCIENCE LAB":
+    templateKey==="history_archive"?"HISTORY ARCHIVE":
+    templateKey==="general_trivia"?"THE QUIZ STUDIO":"FOOTBALL LEGENDS";
+  const headerIcon=templateKey==="science_lab"?"⚛":templateKey==="history_archive"?"◆":"★";
+  const finalTitle=templateKey==="football_gold"?"YOU ARE A FOOTBALL LEGEND":"YOU COMPLETED THE CHALLENGE";
   return <AbsoluteFill style={{backgroundColor:NAVY,color:"#f5f7fa",fontFamily:"Arial, sans-serif"}}>
     <Stadium/>
     <div style={{position:"absolute",inset:75,display:"flex",flexDirection:"column"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #d6ad6844",paddingBottom:22}}>
-        <span style={{fontWeight:900,letterSpacing:5,fontSize:33,color:GOLD}}>★ FOOTBALL LEGENDS</span>
-        <span style={{fontSize:22,color:"#d1dbe4"}}>{q?`ROUND ${String((phase.questionIndex ?? 0)+1).padStart(2,"0")} / ${quiz.questions.length}`:"CHAMPIONS GOLD"}</span>
+        <span style={{fontWeight:900,letterSpacing:5,fontSize:33,color:GOLD}}>{headerIcon} {brand}</span>
+        <span style={{fontSize:22,color:"#d1dbe4"}}>{q?`ROUND ${String((phase.questionIndex ?? 0)+1).padStart(2,"0")} / ${quiz.questions.length}`:brand}</span>
       </div>
       {isCard ? <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",
         textAlign:"center",gap:28,opacity:introProgress,transform:`scale(${.94+.06*introProgress})`}}>
@@ -127,11 +133,11 @@ function QuizFrame({quiz,timeline}:{quiz:RenderQuiz;timeline:RenderQuizTimeline}
 
 type QuizToneCue = {key:string;from:number;type:"intro"|"tick"|"urgent"|"suspense"|"reveal"};
 
-export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
+export function QuizVideo({quiz,timeline,audio,templateKey}:QuizRenderProps) {
   const voiceActive=audio.narrationData!==null;
   const narrationSlots=timeline.phases.filter(p=>["entrance","clues","reveal"].includes(p.kind));
   return <AbsoluteFill>
-    <QuizFrame quiz={quiz} timeline={timeline}/>
+    <QuizFrame quiz={quiz} timeline={timeline} templateKey={templateKey}/>
     {audio.musicData && <Audio src={audio.musicData} loop volume={f=>{
       const fade=Math.min(1,f/60,(timeline.totalFrames-f)/60);
       const narrationSlot=voiceActive&&narrationSlots.some(p=>f>=p.startFrame&&f<p.endFrame);
@@ -159,6 +165,7 @@ export function QuizVideo({quiz,timeline,audio}:QuizRenderProps) {
 }
 
 const DEFAULT_QUIZ_PROPS: QuizRenderProps = {
+  templateKey:"football_gold",
   quiz: {
     settings: {
       templateId: "football-legends-champions-gold",
