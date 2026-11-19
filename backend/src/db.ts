@@ -274,6 +274,30 @@ export async function ensureTables() {
       CHECK (source_kind IN ('ai','csv'))`;
     await sql`CREATE INDEX IF NOT EXISTS idx_quiz_jobs_review
       ON quiz_automation_jobs(user_id,review_status,created_at DESC)`;
+    // AUTO-QUIZ-04: verified asset provenance and fencing for long-running workers.
+    await sql`CREATE TABLE IF NOT EXISTS quiz_studio_assets (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      channel_id TEXT NOT NULL,
+      asset_kind TEXT NOT NULL CHECK(asset_kind IN ('music','image','video','font')),
+      label TEXT NOT NULL,
+      source_url TEXT,
+      license_name TEXT NOT NULL,
+      license_evidence_url TEXT NOT NULL,
+      attribution_text TEXT NOT NULL,
+      commercial_use_allowed BOOLEAN NOT NULL DEFAULT false,
+      youtube_use_allowed BOOLEAN NOT NULL DEFAULT false,
+      expires_at TIMESTAMPTZ,
+      revoked_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(id,user_id)
+    )`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_quiz_assets_owner ON quiz_studio_assets(user_id,channel_id,created_at DESC)`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS worker_claim_id UUID`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS worker_heartbeat_at TIMESTAMPTZ`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS media_qa_report JSONB`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS source_check_report JSONB`;
+    await sql`ALTER TABLE quiz_automation_jobs ADD COLUMN IF NOT EXISTS asset_id UUID REFERENCES quiz_studio_assets(id) ON DELETE SET NULL`;
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
   } catch (err: any) {
