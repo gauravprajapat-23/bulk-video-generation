@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import sql from "../db";
 import { Readable } from "stream";
+import { createReadStream } from "node:fs";
 import { readOwnedVideo } from "./ownedMedia";
 
 interface UploadResult {
@@ -22,7 +23,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
 
 export async function uploadVideoForUser(
   userId: string,
-  videoBuffer: Buffer,
+  videoBuffer: Buffer | string,
   mimeType: string,
   metadata: {
     title: string;
@@ -32,14 +33,15 @@ export async function uploadVideoForUser(
     visibility?: string;
     madeForKids?: boolean;
     publishAt?: string;
+    targetChannelId?: string;
   }
 ): Promise<UploadResult> {
-  const rows = await sql`
-    SELECT * FROM user_youtube_tokens
-    WHERE user_id = ${userId}
-    ORDER BY connected_at DESC
-    LIMIT 1
-  `;
+  const rows = metadata.targetChannelId
+    ? await sql`SELECT * FROM user_youtube_tokens
+        WHERE user_id = ${userId} AND channel_id = ${metadata.targetChannelId}
+          AND refresh_token IS NOT NULL LIMIT 1`
+    : await sql`SELECT * FROM user_youtube_tokens
+        WHERE user_id = ${userId} ORDER BY connected_at DESC LIMIT 1`;
   if (rows.length === 0 || !rows[0].refresh_token) {
     throw new Error("No YouTube channel connected for this user");
   }
@@ -84,12 +86,9 @@ export async function uploadVideoForUser(
     },
   };
 
-  const stream = new Readable({
-    read() {
-      this.push(videoBuffer);
-      this.push(null);
-    },
-  });
+  const stream = typeof videoBuffer === "string"
+    ? createReadStream(videoBuffer)
+    : Readable.from(videoBuffer);
 
   const insertRes = await youtube.videos.insert({
     part: ["snippet", "status"],
@@ -109,61 +108,86 @@ export async function uploadVideoForUser(
   };
 }
 
+/**
+ * Claims a schedule in one database statement. No worker may publish unless
+ * it won the pending -> processing transition.
+ *
+ * This prevents simultaneous workers from uploading one schedule twice.
+ * It does NOT make the external YouTube API transactional.
+ */
 export async function uploadSchedule(scheduleId: string): Promise<void> {
-  const rows = await sql`
-    SELECT * FROM upload_schedules
-    WHERE id = ${scheduleId} AND status = 'pending'
-    LIMIT 1
+  const claimed = await sql`
+    UPDATE upload_schedules
+    SET status = 'processing',
+        processing_started_at = now(),
+        updated_at = now()
+    WHERE id = ${scheduleId}
+      AND status = 'pending'
+      AND scheduled_at <= now()
+    RETURNING *
   `;
-  if (rows.length === 0) return;
+  if (claimed.length !== 1) return;
 
-  const schedule = rows[0];
-  const metadata = typeof schedule.metadata === "string" ? JSON.parse(schedule.metadata) : schedule.metadata;
-
-  await sql`UPDATE upload_schedules SET status = 'processing', updated_at = now() WHERE id = ${scheduleId}`;
-  console.log(`[scheduler] processing schedule ${scheduleId}, video_blob_url: ${schedule.video_blob_url}`);
+  const schedule = claimed[0];
+  console.log(`[scheduler] claimed schedule ${scheduleId}`);
 
   try {
+    const metadata = typeof schedule.metadata === "string" ? JSON.parse(schedule.metadata) : schedule.metadata;
     if (!schedule.video_blob_url) {
-      throw new Error("No video file URL attached to this schedule. Upload the video from the frontend first.");
+      throw new Error("No uploaded video associated with this schedule");
     }
-
-    // Never fetch arbitrary URLs or local paths from persisted schedules.
     const { buffer, mimeType } = await readOwnedVideo(schedule.user_id, schedule.video_blob_url);
+    const result = await uploadVideoForUser(schedule.user_id, buffer, mimeType, {
+      title: metadata.title,
+      description: metadata.description,
+      tags: metadata.tags,
+      categoryId: metadata.categoryId,
+      visibility: metadata.visibility,
+      madeForKids: metadata.madeForKids,
+      // A cron upload runs when due; passing a past publishAt to YouTube is invalid.
+      // The user-selected visibility is applied when the upload reaches YouTube.
+    });
 
-    console.log(`[scheduler] video downloaded, size: ${buffer.length} bytes`);
-
-    const result = await uploadVideoForUser(
-      schedule.user_id,
-      buffer,
-      mimeType,
-      {
-        title: metadata.title,
-        description: metadata.description,
-        tags: metadata.tags,
-        categoryId: metadata.categoryId,
-        visibility: metadata.visibility,
-        madeForKids: metadata.madeForKids,
-        publishAt: schedule.scheduled_at,
-      }
-    );
-
-    console.log(`[scheduler] uploaded to YouTube: ${result.youtubeVideoUrl}`);
+    // Persist the provider's ID immediately. If the process dies after YouTube
+    // succeeds, the schedule will NOT be automatically retried.
+    await sql`
+      UPDATE upload_schedules
+      SET youtube_video_id = ${result.youtubeVideoId},
+          status = 'needs_review',
+          updated_at = now()
+      WHERE id = ${scheduleId} AND status = 'processing'
+    `;
 
     await sql`
       INSERT INTO youtube_uploads
-        (user_id, project_id, schedule_id, upload_mode, title, description, tags, category_id, visibility, made_for_kids, status, progress_percent, scheduled_publish_at, youtube_video_id, youtube_video_url, uploaded_at)
+        (user_id, project_id, schedule_id, upload_mode, title, description, tags,
+         category_id, visibility, made_for_kids, status, progress_percent,
+         scheduled_publish_at, youtube_video_id, youtube_video_url, uploaded_at)
       VALUES
-        (${schedule.user_id}, ${schedule.project_id}, ${scheduleId}, 'scheduled_publish', ${metadata.title}, ${metadata.description || ''}, ${metadata.tags || []}, ${metadata.categoryId || '22'}, ${metadata.visibility || 'private'}, ${metadata.madeForKids || false}, 'uploaded', 100, ${schedule.scheduled_at}, ${result.youtubeVideoId}, ${result.youtubeVideoUrl}, now())
+        (${schedule.user_id}, ${schedule.project_id}, ${scheduleId}, 'scheduled_publish',
+         ${metadata.title}, ${metadata.description || ''}, ${metadata.tags || []},
+         ${metadata.categoryId || '22'}, ${metadata.visibility || 'private'},
+         ${metadata.madeForKids || false}, 'uploaded', 100,
+         ${schedule.scheduled_at}, ${result.youtubeVideoId}, ${result.youtubeVideoUrl}, now())
+      ON CONFLICT (schedule_id) WHERE schedule_id IS NOT NULL DO NOTHING
     `;
 
-    await sql`UPDATE upload_schedules SET status = 'completed', updated_at = now() WHERE id = ${scheduleId}`;
-    console.log(`[scheduler] schedule ${scheduleId} completed`);
-  } catch (err: any) {
-    console.error(`[scheduler] failed to process schedule ${scheduleId}:`, err.message);
     await sql`
-      UPDATE upload_schedules SET status = 'failed', updated_at = now()
-      WHERE id = ${scheduleId}
+      UPDATE upload_schedules
+      SET status = 'completed', updated_at = now()
+      WHERE id = ${scheduleId} AND status = 'needs_review'
+        AND youtube_video_id = ${result.youtubeVideoId}
+    `;
+    console.log(`[scheduler] completed schedule ${scheduleId}: ${result.youtubeVideoId}`);
+  } catch (err: any) {
+    console.error(`[scheduler] failed schedule ${scheduleId}:`, err);
+    // After provider interaction, a failed response may mean uncertain external
+    // state. Never automatically requeue this schedule.
+    await sql`
+      UPDATE upload_schedules
+      SET status = 'needs_review',
+          updated_at = now()
+      WHERE id = ${scheduleId} AND status IN ('processing', 'needs_review')
     `;
   }
 }

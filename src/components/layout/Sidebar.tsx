@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { getBackendToken } from "@/lib/backendClient";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import {
@@ -14,6 +16,7 @@ import {
   CalendarClock,
   Film,
   Bot,
+  Trophy,
   Server,
   ServerCrash,
   PanelLeftClose,
@@ -24,6 +27,7 @@ import { useAppStore } from "@/store/useAppStore";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/create", label: "Create Video", icon: Clapperboard },
+  { href: "/templates", label: "Video Templates", icon: Trophy },
   { href: "/images", label: "Bulk Images", icon: Images },
   { href: "/bulk", label: "Bulk Videos", icon: Layers },
   { href: "/audio", label: "Audio Library", icon: Music2 },
@@ -31,6 +35,7 @@ const NAV_ITEMS = [
   { href: "/youtube", label: "YouTube Connection", icon: Youtube },
   { href: "/scheduler", label: "Upload Scheduler", icon: CalendarClock },
   { href: "/autopilot", label: "Autopilot", icon: Bot },
+  { href: "/autopilot/quiz", label: "AI Quiz Automation", icon: Trophy },
 ];
 
 interface SidebarProps {
@@ -42,6 +47,10 @@ interface SidebarProps {
 export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const backend = useAppStore((s) => s.backend);
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    setSignedIn(Boolean(getBackendToken()));
+  }, [pathname, backend.connected]);
 
   return (
     <aside
@@ -111,6 +120,28 @@ export function Sidebar({ onNavigate, collapsed = false, onToggleCollapse }: Sid
         )}
       >
       
+
+        {!collapsed && (
+          <div className="mb-3 rounded-lg border border-border bg-panel2 px-3 py-2.5">
+            {signedIn ? (
+              <p className="text-xs font-medium text-text">Signed in</p>
+            ) : (
+              <>
+                <p className="text-xs font-semibold text-text">Guest mode</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                  Create and download videos without signing in. Files stay in this browser.
+                </p>
+                <Link
+                  href="/login"
+                  onClick={onNavigate}
+                  className="mt-2 inline-block text-xs font-semibold text-accent hover:underline"
+                >
+                  Sign in with Google (optional)
+                </Link>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Legal links */}
         <div

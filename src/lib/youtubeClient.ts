@@ -134,6 +134,39 @@ export async function requestYouTubeAccessToken(prompt: "" | "consent" | "select
   });
 }
 
+/**
+ * Sign in to the application using only basic Google profile permissions.
+ * Uses Google's GIS popup token client: no redirect URI, no implicit-flow
+ * URL fragments and no YouTube permission required just to edit videos.
+ * The backend validates this token with Google's userinfo endpoint.
+ */
+export async function requestGoogleIdentityAccessToken(): Promise<string> {
+  ensureBrowser();
+  const clientId = getClientId();
+  if (!clientId) {
+    throw new Error("Google sign-in is not configured. You can continue as a guest.");
+  }
+  await loadGoogleIdentityServices();
+  const oauth2 = window.google?.accounts?.oauth2;
+  if (!oauth2) throw new Error("Google sign-in could not initialize.");
+  return new Promise<string>((resolve, reject) => {
+    const client = oauth2.initTokenClient({
+      client_id: clientId,
+      scope: "https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+      callback: (response) => {
+        if (response.error) {
+          reject(new Error(response.error_description || response.error));
+        } else if (!response.access_token) {
+          reject(new Error("Google did not return an access token."));
+        } else {
+          resolve(response.access_token);
+        }
+      },
+    });
+    client.requestAccessToken({ prompt: "select_account" });
+  });
+}
+
 export function clearYouTubeAccessToken() {
   cachedToken = null;
 }

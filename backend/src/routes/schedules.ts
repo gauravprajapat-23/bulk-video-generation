@@ -1,6 +1,7 @@
 import { Router, Request, Response } from "express";
 import { requireAuth } from "../middleware/auth";
 import sql from "../db";
+import { parseOwnedMediaFilename } from "../services/mediaReference";
 
 const router = Router();
 
@@ -28,7 +29,26 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     res.status(400).json({ error: "projectId, scheduledAt, and metadata are required" });
     return;
   }
+  if (typeof videoBlobUrl !== "string" || !videoBlobUrl) {
+    res.status(400).json({ error: "Upload the video before creating a schedule" });
+    return;
+  }
+  let filename: string;
   try {
+    filename = parseOwnedMediaFilename(videoBlobUrl);
+  } catch {
+    res.status(400).json({ error: "Invalid video reference" });
+    return;
+  }
+  try {
+    const media = await sql`
+      SELECT filename FROM uploaded_media
+      WHERE filename = ${filename} AND user_id = ${userId}
+    `;
+    if (!media.length) {
+      res.status(404).json({ error: "Uploaded video not found" });
+      return;
+    }
     const rows = await sql`
       INSERT INTO upload_schedules (user_id, project_id, automation_rule_id, scheduled_at, metadata, video_blob_url)
       VALUES (${userId}, ${projectId}, ${automationRuleId || null}, ${scheduledAt}, ${JSON.stringify(metadata)}, ${videoBlobUrl || null})
@@ -46,6 +66,10 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
   const { status, scheduledAt, metadata } = req.body;
+  if (status !== undefined && !["pending", "paused"].includes(status)) {
+    res.status(400).json({ error: "Only pending and paused are allowed client statuses" });
+    return;
+  }
   try {
     const rows = await sql`
       UPDATE upload_schedules SET
@@ -54,10 +78,11 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
         metadata = COALESCE(${metadata ? JSON.stringify(metadata) : null}::jsonb, metadata),
         updated_at = now()
       WHERE id = ${id} AND user_id = ${userId}
+        AND status IN ('pending', 'paused')
       RETURNING *
     `;
     if (rows.length === 0) {
-      res.status(404).json({ error: "Schedule not found" });
+      res.status(409).json({ error: "Schedule cannot be edited after processing begins" });
       return;
     }
     res.json(rows[0]);
@@ -71,7 +96,16 @@ router.delete("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
   try {
-    await sql`DELETE FROM upload_schedules WHERE id = ${id} AND user_id = ${userId}`;
+    const rows = await sql`
+      DELETE FROM upload_schedules
+      WHERE id = ${id} AND user_id = ${userId}
+        AND status IN ('pending', 'paused')
+      RETURNING id
+    `;
+    if (!rows.length) {
+      res.status(409).json({ error: "Only pending or paused schedules can be deleted" });
+      return;
+    }
     res.json({ ok: true });
   } catch (err) {
     console.error("[schedules] delete error:", err);

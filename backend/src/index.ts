@@ -1,12 +1,14 @@
 import dotenv from "dotenv";
+import { requireReleaseConfig } from "./releaseConfig";
 dotenv.config();
 
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import path from "path";
+import { getMediaStorageDir } from "./services/mediaStorage";
 import { ensureTables, isDbAvailable } from "./db";
 import { startScheduler } from "./services/scheduler";
+import { cleanOrphanedRenderTemps, reportInterruptedRenders } from "./services/renderRecovery";
 import { requireAuth } from "./middleware/auth";
 import sql from "./db";
 import authRoutes from "./routes/auth";
@@ -15,13 +17,16 @@ import scheduleRoutes from "./routes/schedules";
 import automationRoutes from "./routes/automation";
 import uploadRoutes from "./routes/upload";
 import autopilotRoutes from "./routes/autopilot";
+import quizRenderRoutes from "./routes/quizRender";
+import quizAutomationRoutes from "./routes/quizAutomation";
 
 const app = express();
 const PORT = parseInt(process.env.PORT || "4000", 10);
+requireReleaseConfig();
 
 const ALLOWED_ORIGINS = (
   process.env.ALLOWED_ORIGINS ||
-  "http://localhost:3000,http://localhost:3001,https://video-maker-frontend.vercel.app,https://video-maker-frontend.onrender.com"
+  (process.env.NODE_ENV === "production" ? "" : "http://localhost:3000,http://localhost:3001")
 )
   .split(",")
   .map((s) => s.trim())
@@ -56,7 +61,7 @@ app.get("/uploads/:filename", requireAuth, async (req, res) => {
       res.status(404).json({ error: "Media not found" });
       return;
     }
-    res.sendFile(filename, { root: path.join(__dirname, "../uploads"), dotfiles: "deny" });
+    res.sendFile(filename, { root: getMediaStorageDir(), dotfiles: "deny" });
   } catch (err) {
     console.error("[media] authorization failed:", err);
     res.status(500).json({ error: "Media access unavailable" });
@@ -67,12 +72,17 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.get("/api/health/ready", (_req, res) => {
+app.get("/api/health/ready", async (_req, res) => {
   if (!isDbAvailable()) {
     res.status(503).json({ status: "unavailable", reason: "database not ready" });
     return;
   }
-  res.json({ status: "ready" });
+  try {
+    await sql`SELECT 1 AS healthy`;
+    res.json({ status: "ready" });
+  } catch {
+    res.status(503).json({ status: "unavailable", reason: "database unavailable" });
+  }
 });
 
 app.use("/api/auth", authRoutes);
@@ -81,14 +91,36 @@ app.use("/api/schedules", scheduleRoutes);
 app.use("/api/automation", automationRoutes);
 app.use("/api/media", uploadRoutes);
 app.use("/api/autopilot", autopilotRoutes);
+// Explicitly opt-in; anonymous CPU-intensive rendering is disabled by default.
+app.use("/api/quiz-render", quizRenderRoutes);
+app.use("/api/quiz-automation", quizAutomationRoutes);
 
 async function start() {
   await ensureTables();
-  startScheduler();
+  if (process.env.NODE_ENV === "production" && !isDbAvailable()) {
+    throw new Error("Production startup aborted: database unavailable or schema checks failed");
+  }
+  if (isDbAvailable()) {
+    try {
+      await reportInterruptedRenders();
+      const cleanup = await cleanOrphanedRenderTemps();
+      console.log("[render-recovery] startup cleanup:", cleanup);
+    } catch (err) {
+      console.error("[render-recovery] startup recovery check failed:", err);
+    }
+  }
+  if (process.env.NODE_ENV !== "production" || process.env.SCHEDULER_ENABLED === "true") {
+    startScheduler();
+  } else {
+    console.log("[backend] scheduler disabled for this instance");
+  }
   app.listen(PORT, () => {
     console.log(`[backend] listening on http://localhost:${PORT}`);
     console.log(`[backend] allowed origins: ${ALLOWED_ORIGINS.join(", ")}`);
   });
 }
 
-start();
+start().catch((err) => {
+  console.error("[backend] startup failed:", err);
+  process.exitCode = 1;
+});

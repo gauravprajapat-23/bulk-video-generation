@@ -4,3 +4,15 @@ out
 .env*.local
 *.log
 .env
+backend/dist/
+backend/uploads/
+uploads/
+*.mp4
+*.webm
+*.mov
+*.avi
+!backend/.env.example
+!.env.local.example
+
+# Generated dependency audit output (review locally, never commit)
+reports/security-audit.json

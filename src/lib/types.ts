@@ -14,7 +14,7 @@ export type ExportPreset = "youtube_shorts" | "instagram_reels" | "tiktok" | "cu
 
 export type ProjectStatus = "draft" | "queued" | "rendering" | "completed" | "uploaded" | "failed";
 
-export type RenderJobStatus = "pending" | "processing" | "completed" | "failed";
+export type RenderJobStatus = "pending" | "processing" | "completed" | "failed" | "cancelled";
 
 export type UploadVisibility = "private" | "unlisted" | "public";
 

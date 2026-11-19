@@ -2,7 +2,7 @@
 
 import type { AudioAsset, ImageAsset, VideoProject } from "@/lib/types";
 import { renderVideoLocally } from "@/services/videoRenderService";
-import { putBlob } from "@/lib/idbStore";
+import { putBlob, deleteBlob } from "@/lib/idbStore";
 import { newId } from "@/lib/id";
 
 interface RunRenderParams {
@@ -10,6 +10,7 @@ interface RunRenderParams {
   allImages: ImageAsset[];
   allAudio: AudioAsset[];
   onProgress: (percent: number) => void;
+  signal?: AbortSignal;
 }
 
 interface RunRenderResult {
@@ -25,6 +26,7 @@ export async function runProjectRender({
   allImages,
   allAudio,
   onProgress,
+  signal,
 }: RunRenderParams): Promise<RunRenderResult> {
   if (!project.images.length) {
     throw new Error("This project has no images to render.");
@@ -44,13 +46,24 @@ export async function runProjectRender({
     ? allAudio.find((a) => a.id === project.audioAssignment!.audioAssetId) ?? null
     : null;
 
+  if (project.audioAssignment && !audioAsset) {
+    throw new Error("Assigned audio file is missing from your library.");
+  }
+
   const result = await renderVideoLocally(
     { project, imageAssets: usedAssets, watermarkAsset, audioAsset },
-    onProgress
+    onProgress,
+    signal
   );
 
+  if (signal?.aborted) throw new DOMException("Render cancelled", "AbortError");
+  if (result.blob.size === 0) throw new Error("Render produced an empty video");
   const outputBlobKey = `video-${newId()}`;
   await putBlob(outputBlobKey, result.blob);
+  if (signal?.aborted) {
+    await deleteBlob(outputBlobKey);
+    throw new DOMException("Render cancelled", "AbortError");
+  }
 
   return {
     outputBlobKey,

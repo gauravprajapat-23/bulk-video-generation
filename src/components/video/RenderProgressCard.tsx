@@ -6,21 +6,23 @@ import { Badge } from "@/components/ui/Badge";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { Button } from "@/components/ui/Button";
 import { formatBytes, formatDateTime, formatDuration } from "@/lib/format";
-import type { RenderJob, VideoProject } from "@/lib/types";
+import type { RenderJob, RenderJobStatus, VideoProject } from "@/lib/types";
 
-const STATUS_TONE = {
+const STATUS_TONE: Record<RenderJobStatus, "neutral" | "accent" | "ok" | "bad"> = {
   pending: "neutral",
   processing: "accent",
   completed: "ok",
   failed: "bad",
-} as const;
+  cancelled: "neutral",
+};
 
-const STATUS_LABEL = {
+const STATUS_LABEL: Record<RenderJobStatus, string> = {
   pending: "Pending",
   processing: "Processing",
   completed: "Completed",
   failed: "Failed",
-} as const;
+  cancelled: "Cancelled",
+};
 
 export function RenderProgressCard({
   job,
@@ -83,7 +85,7 @@ export function RenderProgressCard({
             </Button>
           </>
         )}
-        {job.status === "failed" && (
+        {(job.status === "failed" || job.status === "cancelled") && (
           <Button size="sm" variant="secondary" onClick={onRetry}>
             <RefreshCcw size={14} /> Retry render
           </Button>

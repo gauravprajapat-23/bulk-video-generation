@@ -19,7 +19,7 @@ export default function LandingPage() {
             href="/dashboard"
             className="rounded-lg bg-[#7c5cfc] px-4 py-2 text-sm font-semibold text-white hover:bg-[#6a4be0] transition-colors"
           >
-            Open App
+            Start Creating
           </Link>
         </div>
       </header>
@@ -31,15 +31,16 @@ export default function LandingPage() {
           <span className="text-[#7c5cfc]">YouTube Shorts</span> at Scale
         </h1>
         <p className="mx-auto mt-5 max-w-2xl text-lg text-[#8b95a5]">
-          Generate bulk video content from images, add audio, and schedule uploads directly to your
-          YouTube channel. Automate your content pipeline with server-side scheduling.
+          Create, render, preview and download videos without an account. Connect YouTube later
+          only if you want to upload videos or use server-side scheduling.
         </p>
+        <p className="mt-3 text-sm text-[#a78bfa]">No signup · No credit card · Download your videos</p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <Link
             href="/dashboard"
             className="rounded-lg bg-[#7c5cfc] px-6 py-3 text-sm font-bold text-white hover:bg-[#6a4be0] transition-colors"
           >
-            Get Started Free
+            Create Videos — No Signup
           </Link>
           <Link
             href="/privacy"
@@ -75,7 +76,7 @@ export default function LandingPage() {
           <FeatureCard
             icon={<Shield size={20} />}
             title="Secure OAuth"
-            description="We use Google OAuth 2.0 for secure, read-only YouTube access. Your credentials are never stored on our servers."
+            description="Google sign-in is optional for local creation. Connecting a YouTube channel separately grants upload permissions when you choose to use them."
           />
           <FeatureCard
             icon={<Film size={20} />}

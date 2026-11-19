@@ -164,6 +164,9 @@ export function buildDefaultRow(project: any, idx: number, draft: MetadataDraft)
 
 /** Parses a pasted or uploaded block of text (tab- or comma-delimited) into header/row form. */
 export function parseBulkSeoText(text: string): { headers: string[]; rows: Record<string, string>[] } | null {
+  if (new TextEncoder().encode(text).length > 5 * 1024 * 1024) {
+    throw new Error("Imported data exceeds the 5 MB CSV limit");
+  }
   const trimmed = text.trim();
   if (!trimmed) return null;
 
@@ -173,6 +176,7 @@ export function parseBulkSeoText(text: string): { headers: string[]; rows: Recor
   }
 
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length > 10001) throw new Error("Tab-separated import exceeds 10,000 rows");
   if (lines.length === 0) return null;
 
   const firstCells = lines[0].split("\t").map((c) => c.trim().toLowerCase().replace(/\s+/g, "_"));
@@ -184,6 +188,9 @@ export function parseBulkSeoText(text: string): { headers: string[]; rows: Recor
 
   const rows = dataLines.map((line) => {
     const cells = line.split("\t");
+    if (cells.length > 100 || cells.some((cell) => cell.length > 20000)) {
+      throw new Error("Tab-separated row exceeds column or cell length limits");
+    }
     const row: Record<string, string> = {};
     headers.forEach((h, i) => (row[h] = (cells[i] ?? "").trim()));
     return row;

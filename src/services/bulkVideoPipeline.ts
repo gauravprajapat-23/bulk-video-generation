@@ -11,6 +11,7 @@ import type { ParsedCsv } from "@/lib/csv";
 import type { BulkImageDesign, DesignPage, DesignElement, TextDesignElement } from "@/lib/bulkImageTypes";
 import { extractVideoMetadata, applyCsvPlaceholders } from "@/lib/placeholders";
 import { newId, nowIso } from "@/lib/id";
+import { normalizeRetryIndices, imageStartForRow } from "@/services/bulkRetryMapping";
 
 /** Metadata stored on each VideoProject.metadata field from CSV row data. */
 export interface CsvProjectMetadata {
@@ -89,6 +90,8 @@ export interface PipelineOptions {
   imagesPerVideo?: number;
   /** Default animation preset for all videos */
   defaultAnimationPreset?: AnimationPreset;
+  /** Source positions retained when regenerating a subset of CSV rows. */
+  sourceRowIndices?: number[];
 }
 
 const READABLE_PAUSE_MS = 700;
@@ -287,6 +290,7 @@ export function createProjectsFromCsv(
     defaultTransitionDurationMs = 500,
     imagesPerVideo = 1,
     defaultAnimationPreset = DEFAULT_ANIMATION_PRESET,
+    sourceRowIndices,
   } = options;
 
   const projects: VideoProject[] = [];
@@ -311,8 +315,10 @@ export function createProjectsFromCsv(
 
   for (let i = 0; i < csv.rows.length; i += 1) {
     const row = csv.rows[i];
+    const originalRowIndex = sourceRowIndices?.[i] ?? i;
+    try {
     const meta = extractVideoMetadata(row);
-    const imageStart = i * imagesPerVideo;
+    const imageStart = imageStartForRow(originalRowIndex, imagesPerVideo);
     const imageSlice = generatedImages.slice(imageStart, imageStart + imagesPerVideo);
 
     // Merge per-row CSV animation preset with default preset
@@ -323,18 +329,17 @@ export function createProjectsFromCsv(
     if (imageSlice.length === 0) {
       errors.push({
         type: "project_creation",
-        rowIndex: i,
-        message: `No images available for row ${i + 1}`,
+        rowIndex: originalRowIndex,
+        message: `No images available for row ${originalRowIndex + 1}`,
         retryable: true,
       });
       continue;
     }
 
-    try {
-      const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${i + 1}`;
+      const projectTitle = meta.title || row.headline || row.name || row.subheadline || `${design.name} ${originalRowIndex + 1}`;
 
       const csvMeta: CsvProjectMetadata = {
-        csvRowIndex: i,
+        csvRowIndex: originalRowIndex,
         title: projectTitle,
         description: meta.description,
         tags: meta.tags,
@@ -349,15 +354,26 @@ export function createProjectsFromCsv(
         rawRow: row,
       };
 
+      // Recompute timing for the actual CSV row: variable-length text can
+      // require longer reading time than the first row used as a sample.
+      const textOverlaysPerSlide: TextOverlay[][] = design.pages.map((page) =>
+        extractTextOverlaysFromDesign(page, row, design.width, design.height),
+      );
+      const rowTimeline = buildPageTimeline(
+        design,
+        { defaultPageDurationMs, defaultTransitionDurationMs, defaultAnimationPreset: animationPreset },
+        textOverlaysPerSlide,
+      );
+
       const project = createProjectFn({
         title: projectTitle,
         width: design.width,
         height: design.height,
         defaultSlideDurationMs: defaultPageDurationMs,
-        transitionType: timeline[0]?.transitionIn || "fade",
+        transitionType: rowTimeline[0]?.transitionIn || "fade",
         metadata: {
           ...csvMeta,
-          timeline,
+          timeline: rowTimeline,
           designWidth: design.width,
           designHeight: design.height,
           totalPages: design.pages.length,
@@ -367,17 +383,12 @@ export function createProjectsFromCsv(
         },
       });
 
-      // Extract ALL text overlays from each design page for the renderer to animate
-      const textOverlaysPerSlide: TextOverlay[][] = design.pages.map((page) =>
-        extractTextOverlaysFromDesign(page, row, design.width, design.height),
-      );
-
       addImagesToProjectFn(project.id, imageSlice.map((img) => img.id), textOverlaysPerSlide);
       projects.push(project);
     } catch (error) {
       errors.push({
         type: "project_creation",
-        rowIndex: i,
+        rowIndex: originalRowIndex,
         message: error instanceof Error ? error.message : "Failed to create project",
         retryable: false,
       });
@@ -409,22 +420,19 @@ export function createProjectsWithRetry(
     imagesPerVideo = 1,
   } = options;
 
+  const indices = normalizeRetryIndices(failedRowIndices, csv.rows.length);
   const filteredCsv: ParsedCsv = {
     headers: csv.headers,
-    rows: failedRowIndices.map((i) => csv.rows[i]).filter(Boolean),
+    rows: indices.map((i) => csv.rows[i]),
   };
 
-  const filteredImages = failedRowIndices.flatMap((i) =>
-    generatedImages.slice(i * imagesPerVideo, i * imagesPerVideo + imagesPerVideo)
-  );
-
   return createProjectsFromCsv(
-    filteredImages,
+    generatedImages,
     filteredCsv,
     design,
     createProjectFn,
     addImagesToProjectFn,
-    options
+    { ...options, sourceRowIndices: indices }
   );
 }
 
