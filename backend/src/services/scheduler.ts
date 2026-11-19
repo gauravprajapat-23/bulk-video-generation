@@ -2,6 +2,7 @@ import cron from "node-cron";
 import sql, { isDbAvailable } from "../db";
 import { uploadSchedule } from "./youtubeUpload";
 import { processAutopilotConfigs } from "./autopilotPipeline";
+import { processQueuedQuizAutomations } from "./quizAutomationWorker";
 
 const BATCH_SIZE = 5;
 
@@ -145,6 +146,8 @@ export function startScheduler(): void {
     await processDueSchedules();
     await processAutomationRules();
     await processAutopilotConfigs();
+    // Opt-in durable quiz generation -> Remotion render -> private YouTube upload.
+    await processQueuedQuizAutomations();
   });
   if (isDbAvailable()) {
     console.log("[scheduler] cron job started — checks every minute for due uploads and automation rules");
