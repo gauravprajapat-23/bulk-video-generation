@@ -197,6 +197,36 @@ export async function ensureTables() {
     await sql`CREATE INDEX IF NOT EXISTS idx_autopilot_configs_user ON autopilot_configs(user_id)`;
     await sql`CREATE INDEX IF NOT EXISTS idx_autopilot_jobs_config ON autopilot_jobs(config_id)`;
 
+    // AUTO-QUIZ-01: durable render-to-YouTube jobs. Default is draft/private only.
+    // Jobs left running after a crash are not retried automatically because the
+    // YouTube upload could have succeeded without a stored acknowledgement.
+    await sql`
+      CREATE TABLE IF NOT EXISTS quiz_automation_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        channel_id TEXT NOT NULL,
+        niche TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        csv_source TEXT,
+        question_count INTEGER NOT NULL DEFAULT 10,
+        output_visibility TEXT NOT NULL DEFAULT 'private'
+          CHECK (output_visibility IN ('private', 'unlisted')),
+        status TEXT NOT NULL DEFAULT 'queued'
+          CHECK (status IN ('queued','generating','rendering','uploading','completed','failed','needs_review')),
+        progress INTEGER NOT NULL DEFAULT 0,
+        youtube_video_id TEXT,
+        youtube_video_url TEXT,
+        error_message TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      )
+    `;
+    await sql`CREATE INDEX IF NOT EXISTS idx_quiz_auto_due ON quiz_automation_jobs(created_at)
+      WHERE status = 'queued'`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_quiz_auto_owner ON quiz_automation_jobs(user_id, created_at DESC)`;
+
     dbAvailable = true;
     console.log("[db] tables verified — database connected");
   } catch (err: any) {
