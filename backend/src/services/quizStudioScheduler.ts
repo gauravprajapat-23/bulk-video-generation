@@ -56,3 +56,28 @@ export async function quarantineInterruptedStudioJobs():Promise<number>{
     RETURNING id`;
   return stale.length;
 }
+
+/**
+ * Fenced recovery: a lease-expired pre-provider job may retry with a new claim.
+ * Expired uploads are never retried because YouTube may already have the video.
+ * Opt-in until concurrent-worker staging tests establish safety.
+ */
+export async function recoverExpiredQuizLeases():Promise<{requeued:number;review:number}>{
+  if(process.env.QUIZ_STUDIO_LEASE_RECOVERY_ENABLED!=="true")return {requeued:0,review:0};
+  const requeued=await sql`UPDATE quiz_automation_jobs SET status='queued',
+      worker_claim_id=NULL,worker_lease_expires_at=NULL,
+      worker_heartbeat_at=NULL,progress=0,updated_at=now(),
+      error_message='Pre-upload worker lease expired; safe job retry queued'
+    WHERE status IN ('generating','rendering') AND worker_claim_id IS NOT NULL
+      AND worker_lease_expires_at<now() AND worker_attempt_count<2
+    RETURNING id`;
+  const review=await sql`UPDATE quiz_automation_jobs SET status='needs_review',
+      worker_claim_id=NULL,worker_lease_expires_at=NULL,updated_at=now(),
+      error_message=CASE WHEN status='uploading'
+        THEN 'Upload lease expired; inspect YouTube before retrying'
+        ELSE 'Pre-upload worker exhausted retry policy' END
+    WHERE status IN ('generating','rendering','uploading')
+      AND worker_claim_id IS NOT NULL AND worker_lease_expires_at<now()
+    RETURNING id`;
+  return {requeued:requeued.length,review:review.length};
+}
