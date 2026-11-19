@@ -8,10 +8,12 @@ import { generateAutoQuiz } from "./quizAutomationContent";
 import { parseRenderQuiz } from "./quizRenderValidation";
 import { getBundledQuiz, quizToneData } from "./quizGuestRender";
 import { uploadVideoForUser } from "./youtubeUpload";
+import { generateStudioMetadata, inspectStudioQuiz, type QuizStudioTemplate } from "./quizStudioPolicy";
 
 export interface AutoQuizJob {
   id:string; user_id:string; channel_id:string; niche:string; topic:string;
   csv_source:string|null; question_count:number; output_visibility:"private"|"unlisted";
+  template_key: QuizStudioTemplate;
 }
 let processing=false;
 const MAX_RENDER_MS=45*60_000;
@@ -36,7 +38,7 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
   const claimed=await sql`UPDATE quiz_automation_jobs SET
       status='generating', started_at=now(), updated_at=now(),progress=2
     WHERE id=${id} AND status='queued'
-    RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility`;
+    RETURNING id,user_id,channel_id,niche,topic,csv_source,question_count,output_visibility,template_key`;
   if(claimed.length!==1)return false;
   const job=claimed[0] as AutoQuizJob;
   let tmpDir:string|null=null;
@@ -50,13 +52,17 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
       questionCount:job.csv_source?Math.max(5,Math.min(20,job.question_count)):job.question_count,
     });
     const {timeline}=parseRenderQuiz(quiz);
+    const quality=inspectStudioQuiz(quiz);
+    await sql`UPDATE quiz_automation_jobs SET quality_report=${JSON.stringify(quality)}::jsonb,
+      updated_at=now() WHERE id=${job.id} AND status='generating'`;
+    if(!quality.passed)throw new Error("Content quality gate: "+quality.reasons.join("; ").slice(0,500));
     const serveUrl=await getBundledQuiz();
     await sql`UPDATE quiz_automation_jobs SET status='rendering',progress=10,updated_at=now()
       WHERE id=${job.id} AND status='generating'`;
     tmpDir=await fs.mkdtemp(path.join(os.tmpdir(),"auto-quiz-"));
     const output=path.join(tmpDir,"quiz.mp4");
     const props:QuizRenderProps={
-      quiz,timeline,
+      quiz,timeline,templateKey:job.template_key,
       audio:{musicData:null,narrationData:null,musicVolume:0,voiceVolume:0,
         effectsVolume:.4,ducking:1,ticksEnabled:true,effectsEnabled:true,toneData:quizToneData},
     };
@@ -94,15 +100,12 @@ export async function processQuizAutomationJob(id:string):Promise<boolean> {
         AND refresh_token IS NOT NULL LIMIT 1`;
     if(connected.length!==1)throw new Error("Target YouTube channel authorization expired");
 
-    const title=(job.topic+" | "+job.niche+" Quiz").slice(0,100);
-    const description=`Test your knowledge of ${job.niche}. ${quiz.questions.length} original quiz questions.\n\n`+
-      "Answer each question before the timer runs out!\n#quiz #trivia";
+    const seo=generateStudioMetadata({niche:job.niche,topic:job.topic,template:job.template_key,count:quiz.questions.length});
     // When YouTube starts processing, an error may still mean an accepted upload.
     // Record needs_review rather than automatically retrying or duplicating a video.
     uploadMayHaveSucceeded=true;
     const uploaded=await uploadVideoForUser(job.user_id,output,"video/mp4",{
-      title,description,tags:["quiz","trivia",job.niche.slice(0,40)],
-      categoryId:"27",visibility:job.output_visibility,madeForKids:false,
+      ...seo,visibility:job.output_visibility,madeForKids:false,
       targetChannelId:job.channel_id,
     });
     await sql`UPDATE quiz_automation_jobs SET
