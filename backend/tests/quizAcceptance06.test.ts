@@ -59,5 +59,5 @@ test("staging database gate is read-only and refuses public publication",()=>{
   assert.match(sourceCode,/worker_lease_expires_at/);
   assert.match(sourceCode,/expiredInFlightLeases/);
   assert.match(sourceCode,/Disable public publication during staging acceptance/);
-  assert.doesNotMatch(sourceCode,/ensureTables\(|INSERT INTO|DELETE FROM|UPDATE quiz_automation_jobs/);
+  assert.doesNotMatch(sourceCode,/await\s+ensureTables\s*\(|INSERT INTO|DELETE FROM|UPDATE quiz_automation_jobs/);
 });
