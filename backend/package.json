@@ -13,7 +13,8 @@
     "preflight:release": "tsx src/releasePreflight.ts",
     "check:release": "npm run check:security && npm run preflight:release",
     "accept:quiz": "tsx src/quizAcceptance.ts",
-    "accept:audit": "node scripts/audit-acceptance.mjs"
+    "accept:audit": "node scripts/audit-acceptance.mjs",
+    "accept:db": "tsx src/quizStagingDbCheck.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.2",
