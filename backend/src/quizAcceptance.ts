@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import {createReadStream} from "node:fs";
 import path from "node:path";
 import {createHash} from "node:crypto";
 import {getVideoMetadata,renderMedia,selectComposition} from "@remotion/renderer";
@@ -65,7 +66,11 @@ async function main():Promise<void>{
     },
   });
   const qa=await inspectStudioMp4(output,timeline.totalFrames/30);
-  const bytes=await fs.readFile(output);
+  let sizeBytes=0;
+  const digest=createHash("sha256");
+  for await(const chunk of createReadStream(output)){
+    digest.update(chunk);sizeBytes+=chunk.length;
+  }
   const actual=await getVideoMetadata(output);
   const report={
     status:qa.passed?"passed":"failed",
@@ -75,7 +80,7 @@ async function main():Promise<void>{
     expectedDurationSeconds:timeline.totalFrames/30,
     videoMetadata:{codec:actual.codec,audioCodec:actual.audioCodec,
       fps:actual.fps,width:actual.width,height:actual.height,duration:actual.durationInSeconds},
-    file:{name:filename,sizeBytes:bytes.length,sha256:createHash("sha256").update(bytes).digest("hex")},
+    file:{name:filename,sizeBytes,sha256:digest.digest("hex")},
     quality:qa,
     generatedAt:new Date().toISOString(),
   };
