@@ -51,3 +51,13 @@ test("backend advisory acceptance records direct/transitive issues without force
   assert.match(script,/counts\.high/);
   assert.doesNotMatch(script,/audit","fix"|--force",/);
 });
+
+test("staging database gate is read-only and refuses public publication",()=>{
+  const sourceCode=source("quizStagingDbCheck.ts");
+  assert.match(sourceCode,/QUIZ_STAGING_ACCEPTANCE_ACK/);
+  assert.match(sourceCode,/information_schema\.columns/);
+  assert.match(sourceCode,/worker_lease_expires_at/);
+  assert.match(sourceCode,/expiredInFlightLeases/);
+  assert.match(sourceCode,/Disable public publication during staging acceptance/);
+  assert.doesNotMatch(sourceCode,/ensureTables\(|INSERT INTO|DELETE FROM|UPDATE quiz_automation_jobs/);
+});
