@@ -58,11 +58,15 @@ async function main():Promise<void>{
   }
   console.log("[accept:quiz] rendering",amount,"questions, frames",timeline.totalFrames,
     "expected seconds",timeline.totalFrames/30);
+  let lastProgressBucket=0;
   await renderMedia({
     serveUrl,composition,inputProps:props,codec:"h264",outputLocation:output,
     onProgress:({progress})=>{
-      const done=Math.round(progress*100);
-      if(done%20===0&&done!==0&&done!==100)process.stdout.write(".");
+      const bucket=Math.min(5,Math.floor(progress*5));
+      if(bucket>lastProgressBucket){
+        lastProgressBucket=bucket;
+        console.log("[accept:quiz] progress",bucket*20+"%");
+      }
     },
   });
   const qa=await inspectStudioMp4(output,timeline.totalFrames/30);
