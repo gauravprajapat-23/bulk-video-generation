@@ -29,6 +29,16 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     res.status(400).json({ error: "projectId, scheduledAt, and metadata are required" });
     return;
   }
+  if (!metadata || typeof metadata!=="object" || Array.isArray(metadata) ||
+      typeof metadata.channelId!=="string" || metadata.channelId.length<3 ||
+      metadata.channelId.length>200 ||
+      typeof metadata.title!=="string" || !metadata.title.trim() ||
+      metadata.title.length>100 ||
+      !["private","unlisted","public"].includes(metadata.visibility || "private") ||
+      !Number.isFinite(Date.parse(scheduledAt)) || Date.parse(scheduledAt)<=Date.now()) {
+    res.status(400).json({error:"Valid YouTube channel, title, visibility and future schedule required"});
+    return;
+  }
   if (typeof videoBlobUrl !== "string" || !videoBlobUrl) {
     res.status(400).json({ error: "Upload the video before creating a schedule" });
     return;
@@ -49,6 +59,12 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
       res.status(404).json({ error: "Uploaded video not found" });
       return;
     }
+    const linked = await sql`SELECT channel_id FROM user_youtube_tokens
+      WHERE user_id=${userId} AND channel_id=${metadata.channelId}
+        AND refresh_token IS NOT NULL LIMIT 1`;
+    if(linked.length!==1){
+      res.status(403).json({error:"Authorize the selected server YouTube channel first"});return;
+    }
     const rows = await sql`
       INSERT INTO upload_schedules (user_id, project_id, automation_rule_id, scheduled_at, metadata, video_blob_url)
       VALUES (${userId}, ${projectId}, ${automationRuleId || null}, ${scheduledAt}, ${JSON.stringify(metadata)}, ${videoBlobUrl || null})
@@ -58,7 +74,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
     res.status(201).json(rows[0]);
   } catch (err: any) {
     console.error("[schedules] create error:", err?.message || err);
-    res.status(500).json({ error: err?.message || "Failed to create schedule" });
+    res.status(500).json({ error: "Failed to create schedule" });
   }
 });
 
