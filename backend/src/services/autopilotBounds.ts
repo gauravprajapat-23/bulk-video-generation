@@ -31,6 +31,13 @@ export function validateAutopilotRenderBounds(input:unknown):void{
     for(const element of p.elements){
       if(!element||typeof element!=="object")throw new Error("Invalid Autopilot element");
       const el=element as Record<string,unknown>;
+      for(const field of ["x","y","width","height","fontSize","opacity"]){
+        const value=el[field];
+        if(value!==undefined&&(typeof value!=="number"||!Number.isFinite(value)||
+          Math.abs(value)>4096)){
+          throw new Error("Autopilot design element dimensions are invalid");
+        }
+      }
       if(typeof el.text==="string"&&el.text.length>3000){
         throw new Error("Autopilot text element exceeds 3000 characters");
       }
@@ -38,6 +45,17 @@ export function validateAutopilotRenderBounds(input:unknown):void{
   }
   if(!Array.isArray(config.csv_rows)||config.csv_rows.length>10000){
     throw new Error("Autopilot CSV row count exceeds limit");
+  }
+  for(const row of config.csv_rows){
+    if(!row||typeof row!=="object"||Array.isArray(row)){
+      throw new Error("Autopilot CSV row is invalid");
+    }
+    const entries=Object.entries(row);
+    if(entries.length>100)throw new Error("Autopilot CSV exceeds 100 columns");
+    if(entries.some(([key,value])=>key.length>120||
+      typeof value!=="string"||value.length>2000)){
+      throw new Error("Autopilot CSV cell exceeds 2000 characters");
+    }
   }
   if(typeof config.videos_per_day!=="number"||
     !Number.isInteger(config.videos_per_day)||config.videos_per_day<1||config.videos_per_day>10){
