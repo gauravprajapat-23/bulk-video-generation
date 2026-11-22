@@ -165,7 +165,7 @@ export async function ensureTables() {
         default_description_template TEXT DEFAULT '{{description}}',
         default_tags TEXT[] DEFAULT '{}',
         default_category_id TEXT DEFAULT '22',
-        default_visibility TEXT DEFAULT 'public',
+        default_visibility TEXT DEFAULT 'private',
         default_made_for_kids BOOLEAN DEFAULT false,
         last_run_date TIMESTAMPTZ,
         created_at TIMESTAMPTZ DEFAULT now(),
@@ -192,6 +192,9 @@ export async function ensureTables() {
       )
     `;
 
+    // Future configs default to private; preserve existing user-selected records.
+    // Public Autopilot publishing additionally requires explicit operator opt-in.
+    await sql`ALTER TABLE autopilot_configs ALTER COLUMN default_visibility SET DEFAULT 'private'`;
     await sql`ALTER TABLE autopilot_configs ADD COLUMN IF NOT EXISTS active_run_id UUID`;
     await sql`ALTER TABLE autopilot_configs ADD COLUMN IF NOT EXISTS active_run_started_at TIMESTAMPTZ`;
     await sql`CREATE INDEX IF NOT EXISTS idx_autopilot_configs_user ON autopilot_configs(user_id)`;
