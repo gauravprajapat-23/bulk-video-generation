@@ -2,7 +2,7 @@ import { google } from "googleapis";
 import sql from "../db";
 import { Readable } from "stream";
 import { createReadStream } from "node:fs";
-import { readOwnedVideo } from "./ownedMedia";
+import { resolveOwnedVideoFile } from "./ownedMedia";
 
 interface UploadResult {
   youtubeVideoId: string;
@@ -36,6 +36,11 @@ export async function uploadVideoForUser(
     targetChannelId?: string;
   }
 ): Promise<UploadResult> {
+  const visibility=metadata.visibility??"private";
+  if(!["private","unlisted","public"].includes(visibility))throw new Error("Invalid YouTube visibility");
+  if(!metadata.title?.trim()||metadata.title.length>100)throw new Error("YouTube title must be 1–100 characters");
+  if(metadata.publishAt && (!Number.isFinite(Date.parse(metadata.publishAt)) ||
+    Date.parse(metadata.publishAt)<=Date.now()))throw new Error("YouTube publishAt must be in the future");
   const rows = metadata.targetChannelId
     ? await sql`SELECT * FROM user_youtube_tokens
         WHERE user_id = ${userId} AND channel_id = ${metadata.targetChannelId}
@@ -80,7 +85,7 @@ export async function uploadVideoForUser(
       categoryId: metadata.categoryId || "22",
     },
     status: {
-      privacyStatus: metadata.publishAt ? "private" : (metadata.visibility || "private"),
+      privacyStatus: metadata.publishAt ? "private" : visibility,
       publishAt: metadata.publishAt || undefined,
       selfDeclaredMadeForKids: metadata.madeForKids || false,
     },
@@ -136,8 +141,8 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
     if (!schedule.video_blob_url) {
       throw new Error("No uploaded video associated with this schedule");
     }
-    const { buffer, mimeType } = await readOwnedVideo(schedule.user_id, schedule.video_blob_url);
-    const result = await uploadVideoForUser(schedule.user_id, buffer, mimeType, {
+    const { filePath, mimeType } = await resolveOwnedVideoFile(schedule.user_id, schedule.video_blob_url);
+    const result = await uploadVideoForUser(schedule.user_id, filePath, mimeType, {
       title: metadata.title,
       description: metadata.description,
       tags: metadata.tags,
