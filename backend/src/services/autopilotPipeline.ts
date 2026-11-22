@@ -3,10 +3,15 @@
  * Runs the full cycle: generate images -> render video -> upload to YouTube.
  */
 import fs from "fs";
+import os from "os";
+import path from "path";
+import { pathToFileURL } from "url";
 import sql from "../db";
 import { renderAllPages, extractTextOverlays } from "./imageRenderer";
 import { renderVideoWithRemotion, type SlideData } from "../remotion/render";
 import { uploadVideoForUser } from "./youtubeUpload";
+import { validateAutopilotRenderBounds } from "./autopilotBounds";
+import {isAutopilotTimeDue} from "./autopilotTiming";
 import type { AutopilotConfig, AnimationPreset, BulkImageDesign, DesignPage } from "../types";
 
 const DEFAULT_ANIMATION_PRESET: AnimationPreset = {
@@ -53,36 +58,16 @@ function calculateSlideDuration(
   else minDuration = 4000;
 
   const calculated = transitionBudget + animationTimeMs + readingTimeMs + READABLE_PAUSE_MS;
-  return Math.max(minDuration, calculated, fallbackDurationMs ?? 0);
+  const duration=Math.max(minDuration, calculated, fallbackDurationMs ?? 0);
+  if(!Number.isFinite(duration)||duration>120_000){
+    throw new Error("Autopilot slide duration exceeds two-minute safety limit");
+  }
+  return duration;
 }
 
 /**
  * Check if an autopilot config should run now based on upload times.
  */
-function isUploadTimeDue(config: Record<string, any>): boolean {
-  if (!config.is_enabled) return false;
-  if (!config.csv_rows || config.csv_rows.length === 0) return false;
-  if (config.csv_cursor >= config.csv_rows.length) return false;
-
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const todayStr = now.toISOString().slice(0, 10);
-
-  if (config.last_run_date) {
-    const lastRun = new Date(config.last_run_date);
-    if (lastRun.toISOString().startsWith(todayStr)) {
-      const lastRunMinutes = lastRun.getHours() * 60 + lastRun.getMinutes();
-      if (Math.abs(currentMinutes - lastRunMinutes) <= 3) return false;
-    }
-  }
-
-  return (config.upload_times || []).some((t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    const uploadMinutes = h * 60 + m;
-    return Math.abs(currentMinutes - uploadMinutes) <= 2;
-  });
-}
-
 /**
  * Resolve template placeholders with CSV row data.
  */
@@ -104,6 +89,25 @@ export async function runAutopilotTickForConfig(
   if (!config.csv_rows || config.csv_rows.length === 0) return result;
   if (config.csv_cursor >= config.csv_rows.length) return result;
 
+  // One durable claim per config: concurrent cron/manual runners cannot start
+  // the same CSV batch. An interrupted run must be reviewed, not auto-replayed.
+  const runId = crypto.randomUUID();
+  const claimed = await sql`
+    UPDATE autopilot_configs
+    SET active_run_id = ${runId}, active_run_started_at = now(), updated_at = now()
+    WHERE id = ${config.id} AND is_enabled = true AND active_run_id IS NULL
+    RETURNING *
+  `;
+  if (claimed.length !== 1) {
+    result.errors.push("Autopilot run already active or awaiting reconciliation");
+    return result;
+  }
+  config = claimed[0];
+  let uncertainUpload = false;
+  let cursorPersisted = false;
+
+  try {
+  validateAutopilotRenderBounds(config);
   const design: BulkImageDesign = config.design_data;
   if (!design?.pages || design.pages.length === 0) {
     result.errors.push("No design pages");
@@ -129,6 +133,7 @@ export async function runAutopilotTickForConfig(
     // Process each row
     for (const { row, rowIndex } of rowsToProcess) {
       const jobId = crypto.randomUUID();
+      let renderOutputPath: string | null = null;
 
       // Create job record
       await sql`
@@ -152,11 +157,11 @@ export async function runAutopilotTickForConfig(
           );
 
           // Write image to temp file
-          const tmpPath = `/tmp/autopilot-slide-${jobId}-${pageIndex}.png`;
+          const tmpPath = path.join(os.tmpdir(), `autopilot-slide-${jobId}-${pageIndex}.png`);
           fs.writeFileSync(tmpPath, imageBuffers[pageIndex]);
 
           return {
-            imageUrl: `file://${tmpPath}`,
+            imageUrl: pathToFileURL(tmpPath).href,
             durationMs,
             transitionIn: page.transitionIn || "fade",
             transitionDurationMs: page.transitionDurationMs || 500,
@@ -175,23 +180,28 @@ export async function runAutopilotTickForConfig(
           height: design.height,
         });
 
+        renderOutputPath = renderResult.outputPath;
+
         // 4. Upload to YouTube
         await sql`UPDATE autopilot_jobs SET status = 'uploading' WHERE id = ${jobId}`;
 
-        const videoBuffer = fs.readFileSync(renderResult.outputPath);
+        // YouTube upload streams the rendered MP4; do not buffer the whole file in memory.
         const title = resolveTemplate(config.default_title_template || "{{headline}} #shorts", row);
         const description = resolveTemplate(config.default_description_template || "{{description}}", row);
 
+        // From this point, an API error may conceal a successful YouTube upload.
+        uncertainUpload = true;
         const uploadResult = await uploadVideoForUser(
           config.user_id,
-          videoBuffer,
+          renderResult.outputPath,
           "video/mp4",
           {
             title: title.slice(0, 100),
             description: description.slice(0, 5000),
             tags: config.default_tags || [],
             categoryId: config.default_category_id || "22",
-            visibility: config.default_visibility || "public",
+            visibility: config.default_visibility==="public" && process.env.AUTOPILOT_PUBLIC_UPLOAD_ENABLED==="true"
+              ? "public" : config.default_visibility==="unlisted" ? "unlisted" : "private",
             madeForKids: config.default_made_for_kids || false,
           },
         );
@@ -202,11 +212,12 @@ export async function runAutopilotTickForConfig(
             status = 'completed',
             youtube_video_id = ${uploadResult.youtubeVideoId},
             youtube_video_url = ${uploadResult.youtubeVideoUrl},
-            video_blob_url = ${renderResult.outputPath},
+            video_blob_url = NULL,
             completed_at = now()
           WHERE id = ${jobId}
         `;
 
+        uncertainUpload = false;
         result.generated++;
         result.uploaded++;
 
@@ -214,12 +225,19 @@ export async function runAutopilotTickForConfig(
         try {
           fs.unlinkSync(renderResult.outputPath);
           for (let i = 0; i < design.pages.length; i++) {
-            fs.unlinkSync(`/tmp/autopilot-slide-${jobId}-${i}.png`);
+            fs.unlinkSync(path.join(os.tmpdir(), `autopilot-slide-${jobId}-${i}.png`));
           }
         } catch { /* ignore cleanup errors */ }
 
       } catch (err: any) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        // A failed render or upload must not strand temporary media on disk.
+        if (renderOutputPath) {
+          await fs.promises.unlink(renderOutputPath).catch(() => {});
+        }
+        for (let i = 0; i < design.pages.length; i++) {
+          await fs.promises.unlink(path.join(os.tmpdir(), `autopilot-slide-${jobId}-${i}.png`)).catch(() => {});
+        }
         await sql`
           UPDATE autopilot_jobs SET
             status = 'failed',
@@ -227,6 +245,9 @@ export async function runAutopilotTickForConfig(
           WHERE id = ${jobId}
         `;
         result.errors.push(`Row ${rowIndex + 1}: ${msg}`);
+        // Cursor counts contiguous successes only. Continuing after a failed row
+        // would skip it and re-upload later successful rows on the next run.
+        break;
       }
     }
 
@@ -238,6 +259,7 @@ export async function runAutopilotTickForConfig(
         updated_at = now()
       WHERE id = ${config.id}
     `;
+    cursorPersisted = true;
 
   } catch (err: any) {
     const msg = err instanceof Error ? err.message : "Unknown error";
@@ -245,6 +267,18 @@ export async function runAutopilotTickForConfig(
   }
 
   return result;
+  } finally {
+    if (uncertainUpload || (result.uploaded > 0 && !cursorPersisted)) {
+      console.error(`[autopilot] run ${runId} needs manual reconciliation; preserving durable claim`);
+    } else {
+      // Never clear a claim owned by a different run.
+      await sql`
+        UPDATE autopilot_configs SET active_run_id = NULL,
+          active_run_started_at = NULL, updated_at = now()
+        WHERE id = ${config.id} AND active_run_id = ${runId}
+      `;
+    }
+  }
 }
 
 /**
@@ -261,7 +295,7 @@ export async function processAutopilotConfigs(): Promise<void> {
     if (enabledConfigs.length === 0) return;
 
     for (const config of enabledConfigs) {
-      if (!isUploadTimeDue(config)) continue;
+      if (!isAutopilotTimeDue(config)) continue;
 
       console.log(`[autopilot] running tick for config: ${config.name} (${config.id})`);
 

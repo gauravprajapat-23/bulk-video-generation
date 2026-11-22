@@ -2,17 +2,20 @@ import { Router, Request, Response } from "express";
 import { google } from "googleapis";
 import { requireAuth } from "../middleware/auth";
 import sql from "../db";
-import { readOwnedVideo } from "../services/ownedMedia";
+import { resolveOwnedVideoFile } from "../services/ownedMedia";
+import {createReadStream} from "node:fs";
 
 const router = Router();
 
-async function getRefreshedClient(userId: string) {
-  const rows = await sql`
-    SELECT * FROM user_youtube_tokens
-    WHERE user_id = ${userId}
-    ORDER BY connected_at DESC
-    LIMIT 1
-  `;
+async function getRefreshedClient(userId: string, targetChannelId?:string) {
+  const rows = targetChannelId
+    ? await sql`SELECT * FROM user_youtube_tokens WHERE user_id=${userId}
+        AND channel_id=${targetChannelId} AND refresh_token IS NOT NULL LIMIT 1`
+    : await sql`SELECT * FROM user_youtube_tokens WHERE user_id=${userId}
+        AND refresh_token IS NOT NULL ORDER BY connected_at DESC LIMIT 2`;
+  if(!targetChannelId && rows.length>1){
+    throw new Error("Multiple channels connected; specify channelId");
+  }
   if (rows.length === 0 || !rows[0].refresh_token) return null;
 
   const tokenRow = rows[0];
@@ -78,21 +81,36 @@ router.delete("/channels/:channelId", requireAuth, async (req: Request, res: Res
 
 router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
-  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl } = req.body;
+  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl, channelId } = req.body ?? {};
 
+  if(typeof title!=="string"||!title.trim()||title.length>100||
+    typeof videoUrl!=="string"||videoUrl.length>2048||
+    (visibility!==undefined&&!["private","unlisted","public"].includes(visibility))||
+    (publishAt!==undefined&&(typeof publishAt!=="string"||
+      !Number.isFinite(Date.parse(publishAt))||Date.parse(publishAt)<=Date.now()))||
+    (tags!==undefined&&(!Array.isArray(tags)||tags.length>50||
+      tags.some((t:unknown)=>typeof t!=="string"||t.length>100)))||
+    (madeForKids!==undefined&&typeof madeForKids!=="boolean")||
+    (channelId!==undefined&&(typeof channelId!=="string"||channelId.length>200))||
+    (description!==undefined&&(typeof description!=="string"||description.length>5000))||
+    (categoryId!==undefined&&(typeof categoryId!=="string"||!/^[0-9]{1,3}$/.test(categoryId)))){
+    res.status(400).json({error:"Invalid title, video reference, visibility, schedule or metadata"});return;
+  }
   if (!title || !videoUrl) {
     res.status(400).json({ error: "title and videoUrl are required" });
     return;
   }
 
-  const client = await getRefreshedClient(userId);
+  let client;
+  try{client=await getRefreshedClient(userId,channelId);}
+  catch{res.status(409).json({error:"Select a connected server YouTube channel explicitly"});return;}
   if (!client) {
     res.status(400).json({ error: "No YouTube channel connected. Please connect via /api/auth/google first." });
     return;
   }
 
   try {
-    const { buffer, mimeType } = await readOwnedVideo(userId, videoUrl);
+    const { filePath, mimeType } = await resolveOwnedVideoFile(userId, videoUrl);
 
     const youtube = google.youtube({ version: "v3", auth: client.oauth2Client });
 
@@ -113,11 +131,12 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
       },
       media: {
         mimeType,
-        body: new (require("stream").Readable)({ read() { this.push(buffer); this.push(null); } }),
+        body: createReadStream(filePath),
       },
     });
 
     const videoId = insertRes.data.id;
+    if(!videoId)throw new Error("YouTube upload response missing video ID");
     const videoUrlResult = `https://youtube.com/watch?v=${videoId}`;
 
     const uploadRows = await sql`
@@ -131,7 +150,7 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
     res.json({ youtubeVideoId: videoId, youtubeVideoUrl: videoUrlResult, upload: uploadRows[0] });
   } catch (err: any) {
     console.error("[youtube] upload error:", err);
-    res.status(500).json({ error: err.message || "Upload failed" });
+    res.status(502).json({ error: "YouTube upload failed or its outcome is uncertain; check YouTube Studio before retrying" });
   }
 });
 

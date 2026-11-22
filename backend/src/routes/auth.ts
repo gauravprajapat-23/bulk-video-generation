@@ -3,10 +3,13 @@ import { google } from "googleapis";
 import crypto from "crypto";
 import sql from "../db";
 import { requireAuth, signToken } from "../middleware/auth";
+import {allowGoogleLoginAttempt} from "../services/loginRateLimit";
+import {isAcceptedGoogleAccessGrant} from "../services/googleTokenGrant";
 
 const router = Router();
 const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/youtube.upload",
+  "https://www.googleapis.com/auth/youtube.force-ssl",
   "https://www.googleapis.com/auth/youtube.readonly",
   "https://www.googleapis.com/auth/userinfo.email",
   "https://www.googleapis.com/auth/userinfo.profile",
@@ -62,6 +65,13 @@ router.get("/google/callback", async (req: Request, res: Response) => {
     const userId = state[0].user_id as string;
     const oauth = newGoogleClient();
     const { tokens } = await oauth.getToken(code);
+    // Persist actual granted scopes, never assume everything requested was granted.
+    const grantedScopes = typeof tokens.scope === "string"
+      ? tokens.scope.split(/\s+/).filter(Boolean) : [];
+    if (!grantedScopes.includes("https://www.googleapis.com/auth/youtube.upload")) {
+      res.redirect(callbackRedirect("/youtube?error=upload_scope_required"));
+      return;
+    }
     oauth.setCredentials(tokens);
     const youtube = google.youtube({ version: "v3", auth: oauth });
     const channels = await youtube.channels.list({ part: ["snippet"], mine: true });
@@ -85,7 +95,7 @@ router.get("/google/callback", async (req: Request, res: Response) => {
         (user_id, channel_id, channel_title, channel_thumbnail_url, access_token, refresh_token, token_expiry, scopes, connected_at)
       VALUES
         (${userId}, ${channel.id}, ${channel.snippet?.title || "YouTube Channel"}, ${thumbnail}, ${tokens.access_token || null},
-         ${tokens.refresh_token || null}, ${tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null}, ${YOUTUBE_SCOPES}, now())
+         ${tokens.refresh_token || null}, ${tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null}, ${grantedScopes}, now())
       ON CONFLICT (user_id, channel_id) DO UPDATE SET
         channel_title = EXCLUDED.channel_title,
         channel_thumbnail_url = EXCLUDED.channel_thumbnail_url,
@@ -103,21 +113,51 @@ router.get("/google/callback", async (req: Request, res: Response) => {
 });
 
 router.post("/google-token", async (req: Request, res: Response) => {
-  const { accessToken } = req.body;
-  if (!accessToken) {
-    res.status(400).json({ error: "accessToken is required" });
+  if(!allowGoogleLoginAttempt(req.ip||req.socket.remoteAddress||"unknown")){
+    res.status(429).json({error:"Too many sign-in attempts. Retry later."});return;
+  }
+  const { accessToken } = req.body ?? {};
+  if (typeof accessToken !== "string" || accessToken.length < 12 || accessToken.length > 4096) {
+    res.status(400).json({ error: "Valid accessToken is required" });
     return;
   }
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    res.status(503).json({ error: "Google sign-in unavailable" });return;
+  }
   try {
+    // Userinfo alone does not prove that this token was issued to our app.
+    // Google tokeninfo exposes the OAuth client that requested the token.
+    const introspection=await fetch(
+      "https://oauth2.googleapis.com/tokeninfo?access_token="+encodeURIComponent(accessToken),
+      {signal:AbortSignal.timeout(10000)});
+    if(!introspection.ok){
+      res.status(401).json({error:"Google token invalid"});return;
+    }
+    const grant=await introspection.json() as {
+      azp?:string;issued_to?:string;aud?:string;audience?:string;
+      sub?:string;expires_in?:string|number;scope?:string;
+    };
+    if(!isAcceptedGoogleAccessGrant(grant,process.env.GOOGLE_CLIENT_ID)){
+      res.status(401).json({error:"Google token is not authorized for this application"});
+      return;
+    }
     const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      signal:AbortSignal.timeout(10000),headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
       res.status(401).json({ error: "Invalid Google access token" });
       return;
     }
-    const googleUser = (await response.json()) as { id?: string; sub?: string; email?: string; name?: string; picture?: string };
+    const googleUser = (await response.json()) as { id?: string; sub?: string; email?: string;
+      verified_email?: boolean; name?: string; picture?: string };
+    if (!googleUser.email || googleUser.verified_email !== true) {
+      res.status(401).json({ error: "Google account must provide a verified email" });
+      return;
+    }
     const userId = googleUser.id || googleUser.sub;
+    if(grant.sub && grant.sub !== userId){
+      res.status(401).json({error:"Google account identity mismatch"});return;
+    }
     if (!userId) {
       res.status(401).json({ error: "Could not determine Google user ID" });
       return;
@@ -138,7 +178,7 @@ router.post("/google-token", async (req: Request, res: Response) => {
     res.json({ token, userId, email });
   } catch (err: any) {
     console.error("[auth] google-token login error:", err?.message || err);
-    res.status(500).json({ error: err?.message || "Google token login failed" });
+    res.status(500).json({ error: "Google token login unavailable" });
   }
 });
 

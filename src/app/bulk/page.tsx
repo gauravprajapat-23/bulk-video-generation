@@ -711,6 +711,7 @@ export default function BulkVideoGeneratorPage() {
               <span className="text-text font-semibold">
                 {progress.completed}/{progress.total} completed
                 {progress.failed > 0 && <span className="text-bad"> · {progress.failed} failed</span>}
+                {progress.cancelled > 0 && <span className="text-muted"> · {progress.cancelled} cancelled</span>}
               </span>
               <span className="text-muted">
                 {formatTime(progress.elapsedSec)} elapsed
@@ -741,6 +742,7 @@ export default function BulkVideoGeneratorPage() {
                 {info.status === "processing" && <Loader2 size={14} className="animate-spin text-accent" />}
                 {info.status === "completed" && <CheckCircle2 size={14} className="text-good" />}
                 {info.status === "failed" && <XCircle size={14} className="text-bad" />}
+                {info.status === "cancelled" && <XCircle size={14} className="text-muted" />}
                 {info.status === "pending" && <span className="h-3.5 w-3.5 rounded-full border border-muted" />}
                 <span className="flex-1 truncate text-xs text-text">{project?.title || "Untitled"}</span>
                 <span className={`text-[10px] ${hasAudio ? "text-good" : "text-muted"}`}>

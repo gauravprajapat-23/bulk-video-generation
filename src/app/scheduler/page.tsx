@@ -58,6 +58,7 @@ import {
   autoLoginWithGoogle,
   createSchedule as createServerSchedule,
   listSchedules as listServerSchedules,
+  listYouTubeChannels as listServerYouTubeChannels,
   updateSchedule as updateServerSchedule,
   deleteSchedule as deleteServerSchedule,
   createAutomationRule as createServerAutomationRule,
@@ -211,19 +212,37 @@ function UploadSchedulerContent() {
   // ---- Bulk SEO field: paste / import / export, all operating on the same `rows` state ----
 
   function applyBulkText(text: string) {
-    const parsed = parseBulkSeoText(text);
-    if (!parsed || parsed.rows.length === 0) {
-      show("Couldn't read that as a table. Paste tab- or comma-separated data.", "error");
-      return;
+    try {
+      const parsed = parseBulkSeoText(text);
+      if (!parsed || parsed.rows.length === 0) {
+        show("Could not read a table. Use tab- or comma-separated rows.", "error");
+        return;
+      }
+      if (parsed.rows.length > rows.length) {
+        show(`CSV contains ${parsed.rows.length} rows but only ${rows.length} videos are selected. Extra rows were not applied.`, "error");
+        return;
+      }
+      setRows((cur) => applyParsedRows(cur, parsed));
+      show(`Applied SEO to ${Math.min(parsed.rows.length, rows.length)} video(s).`, "success");
+    } catch (err) {
+      show(err instanceof Error ? err.message : "Invalid CSV import", "error");
     }
-    setRows((cur) => applyParsedRows(cur, parsed));
-    show(`Applied SEO to ${Math.min(parsed.rows.length, rows.length)} video(s).`, "success");
   }
 
   function handleBulkFile(file: File) {
+    const maxBytes = 5 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      show("CSV file exceeds the 5 MB import limit.", "error");
+      return;
+    }
     const reader = new FileReader();
+    reader.onerror = () => show("Could not read CSV file.", "error");
     reader.onload = (ev) => {
-      const text = ev.target?.result as string;
+      const text = ev.target?.result;
+      if (typeof text !== "string") {
+        show("CSV file contents are not readable text.", "error");
+        return;
+      }
       setBulkText(text);
       applyBulkText(text);
     };
@@ -510,6 +529,18 @@ function UploadSchedulerContent() {
       }
     }
 
+    // Bind the server schedule to the intended channel, never the latest OAuth account.
+    let chosenServerChannel:string;
+    try{
+      const connected=await listServerYouTubeChannels() as Array<{channel_id:string}>;
+      const requested=connected.find(x=>x.channel_id===youtube.channelId);
+      const choice=requested||(connected.length===1?connected[0]:undefined);
+      if(!choice)throw new Error("Connect or select the correct server YouTube channel first");
+      chosenServerChannel=choice.channel_id;
+    }catch(err){
+      show(err instanceof Error?err.message:"Cannot verify server YouTube channel","error");
+      return;
+    }
     setBusy(true);
     const failures: string[] = [];
 
@@ -533,6 +564,7 @@ function UploadSchedulerContent() {
           categoryId: row.categoryId,
           visibility: "private" as const,
           madeForKids: row.madeForKids,
+          channelId: chosenServerChannel,
         };
 
         if (!project.outputBlobKey) throw new Error("Render the video before scheduling");
@@ -816,11 +848,16 @@ function UploadSchedulerContent() {
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" ? "warn" : "accent"}>{s.status}</Badge>
+                  <Badge tone={s.status === "completed" ? "ok" : s.status === "failed" ? "bad" : s.status === "paused" || s.status === "needs_review" ? "warn" : "accent"}>{s.status === "needs_review" ? "Needs review" : s.status}</Badge>
                   {typeof s.video_blob_url === "string" && s.video_blob_url.length > 0 && (
                     <Button size="sm" variant="ghost" onClick={() => setServerPreviewUrl(s.video_blob_url)}>
                       <Eye size={12} /> Preview
                     </Button>
+                  )}
+                  {s.status === "needs_review" && (
+                    <span className="max-w-48 text-[10px] text-muted">
+                      Check your YouTube channel before attempting another upload.
+                    </span>
                   )}
                   {(s.status === "pending" || s.status === "paused") && (
                     <>

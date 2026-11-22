@@ -8,6 +8,7 @@ import os from "os";
 import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import type { SlideData } from "./SlideVideo";
+import { expectedFrameCount } from "./frameTiming";
 
 export type { SlideData } from "./SlideVideo";
 import type { AnimationPreset } from "../types";
@@ -20,7 +21,15 @@ let bundled: string = "";
 async function getBundle(): Promise<string> {
   if (bundled && fs.existsSync(bundled)) return bundled;
 
-  const entryPoint = path.join(__dirname, "Root.tsx");
+  // In production, __dirname points to dist/remotion while TSX source
+  // remains in src/remotion. Prefer source files for the Remotion bundler.
+  const candidates = [
+    path.join(__dirname, "Root.tsx"),
+    path.resolve(__dirname, "../../src/remotion/Root.tsx"),
+    path.resolve(process.cwd(), "src/remotion/Root.tsx"),
+  ];
+  const entryPoint = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!entryPoint) throw new Error("Remotion TSX entrypoint not found; deploy backend/src/remotion alongside dist");
   console.log("[remotion] bundling from", entryPoint);
 
   bundled = await bundle({
@@ -58,12 +67,18 @@ export async function renderVideoWithRemotion(
   if (pages.length === 0) {
     throw new Error("No pages to render");
   }
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 ||
+      !Number.isFinite(fps) || fps < 1 || fps > 120 ||
+      pages.some((page) => !Number.isFinite(page.durationMs) || page.durationMs <= 0)) {
+    throw new Error("Invalid Remotion dimensions, frame rate, or slide duration");
+  }
+
 
   const bundleLocation = await getBundle();
 
   // Calculate total duration
   const totalDurationMs = pages.reduce((sum, p) => sum + p.durationMs, 0);
-  const durationInFrames = Math.ceil((totalDurationMs / 1000) * fps);
+  const durationInFrames = expectedFrameCount(pages.map((p) => p.durationMs), fps);
 
   console.log(`[remotion] rendering ${pages.length} slides, ${totalDurationMs}ms total, ${durationInFrames} frames`);
 
@@ -87,28 +102,28 @@ export async function renderVideoWithRemotion(
   const outputFilename = `autopilot-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.mp4`;
   const outputPath = path.join(tmpDir, outputFilename);
 
-  await renderMedia({
-    composition,
-    serveUrl: bundleLocation,
-    codec: "h264",
-    outputLocation: outputPath,
-    inputProps: {
-      pages,
-      animationPreset,
-    },
-    onProgress: ({ progress }: { progress: number }) => {
-      if (Math.round(progress * 100) % 10 === 0) {
-        console.log(`[remotion] render progress: ${Math.round(progress * 100)}%`);
-      }
-    },
-  });
+  try {
+    await renderMedia({
+      composition,
+      serveUrl: bundleLocation,
+      codec: "h264",
+      outputLocation: outputPath,
+      inputProps: { pages, animationPreset },
+      onProgress: ({ progress }: { progress: number }) => {
+        if (Math.round(progress * 100) % 10 === 0) {
+          console.log(`[remotion] render progress: ${Math.round(progress * 100)}%`);
+        }
+      },
+    });
 
-  const stats = fs.statSync(outputPath);
-  console.log(`[remotion] render complete: ${outputPath} (${stats.size} bytes)`);
-
-  return {
-    outputPath,
-    durationMs: totalDurationMs,
-    sizeBytes: stats.size,
-  };
+    const stats = await fs.promises.stat(outputPath);
+    if (!stats.isFile() || stats.size < 1024) {
+      throw new Error("Remotion produced a missing or invalid-sized MP4");
+    }
+    console.log(`[remotion] render complete: ${outputPath} (${stats.size} bytes)`);
+    return { outputPath, durationMs: totalDurationMs, sizeBytes: stats.size };
+  } catch (error) {
+    await fs.promises.unlink(outputPath).catch(() => {});
+    throw error;
+  }
 }

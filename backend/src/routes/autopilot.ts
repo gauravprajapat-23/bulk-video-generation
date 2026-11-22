@@ -23,7 +23,7 @@ router.get("/configs", requireAuth, async (req: Request, res: Response) => {
 // Create autopilot config
 router.post("/configs", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
-  const { name, niche } = req.body;
+  const { name, niche } = req.body ?? {};
   try {
     const rows = await sql`
       INSERT INTO autopilot_configs (user_id, name, niche)
@@ -41,7 +41,7 @@ router.post("/configs", requireAuth, async (req: Request, res: Response) => {
 router.put("/configs/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
-  const body = req.body;
+  const body = req.body ?? {};
   try {
     // Build dynamic update using individual field assignments
     const rows = await sql`
