@@ -81,7 +81,7 @@ router.delete("/channels/:channelId", requireAuth, async (req: Request, res: Res
 
 router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
-  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl, channelId } = req.body;
+  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl, channelId } = req.body ?? {};
 
   if(typeof title!=="string"||!title.trim()||title.length>100||
     typeof videoUrl!=="string"||videoUrl.length>2048||
