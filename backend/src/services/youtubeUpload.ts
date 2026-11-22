@@ -46,7 +46,11 @@ export async function uploadVideoForUser(
         WHERE user_id = ${userId} AND channel_id = ${metadata.targetChannelId}
           AND refresh_token IS NOT NULL LIMIT 1`
     : await sql`SELECT * FROM user_youtube_tokens
-        WHERE user_id = ${userId} ORDER BY connected_at DESC LIMIT 1`;
+        WHERE user_id = ${userId} AND refresh_token IS NOT NULL
+        ORDER BY connected_at DESC LIMIT 2`;
+  if (!metadata.targetChannelId && rows.length > 1) {
+    throw new Error("Multiple YouTube channels connected; choose targetChannelId explicitly");
+  }
   if (rows.length === 0 || !rows[0].refresh_token) {
     throw new Error("No YouTube channel connected for this user");
   }
@@ -148,6 +152,7 @@ export async function uploadSchedule(scheduleId: string): Promise<void> {
       tags: metadata.tags,
       categoryId: metadata.categoryId,
       visibility: metadata.visibility,
+      targetChannelId: metadata.channelId,
       madeForKids: metadata.madeForKids,
       // A cron upload runs when due; passing a past publishAt to YouTube is invalid.
       // The user-selected visibility is applied when the upload reaches YouTube.
