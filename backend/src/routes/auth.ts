@@ -3,6 +3,7 @@ import { google } from "googleapis";
 import crypto from "crypto";
 import sql from "../db";
 import { requireAuth, signToken } from "../middleware/auth";
+import {allowGoogleLoginAttempt} from "../services/loginRateLimit";
 
 const router = Router();
 const YOUTUBE_SCOPES = [
@@ -111,6 +112,9 @@ router.get("/google/callback", async (req: Request, res: Response) => {
 });
 
 router.post("/google-token", async (req: Request, res: Response) => {
+  if(!allowGoogleLoginAttempt(req.ip||req.socket.remoteAddress||"unknown")){
+    res.status(429).json({error:"Too many sign-in attempts. Retry later."});return;
+  }
   const { accessToken } = req.body;
   if (!accessToken) {
     res.status(400).json({ error: "accessToken is required" });
