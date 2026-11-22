@@ -22,7 +22,7 @@ router.get("/", requireAuth, async (req: Request, res: Response) => {
 
 router.post("/", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
-  const { projectId, automationRuleId, scheduledAt, metadata, videoBlobUrl } = req.body;
+  const { projectId, automationRuleId, scheduledAt, metadata, videoBlobUrl } = req.body ?? {};
   console.log("[schedules] POST / - userId:", userId, "projectId:", projectId, "scheduledAt:", scheduledAt);
   if (!projectId || !scheduledAt || !metadata) {
     console.error("[schedules] missing fields:", { projectId, scheduledAt, metadata });
@@ -81,7 +81,7 @@ router.post("/", requireAuth, async (req: Request, res: Response) => {
 router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
-  const { status, scheduledAt, metadata } = req.body;
+  const { status, scheduledAt, metadata } = req.body ?? {};
   if (status !== undefined && !["pending", "paused"].includes(status)) {
     res.status(400).json({ error: "Only pending and paused are allowed client statuses" });
     return;
