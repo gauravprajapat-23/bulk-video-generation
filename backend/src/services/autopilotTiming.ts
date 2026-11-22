@@ -14,7 +14,8 @@ export function isAutopilotTimeDue(config:{
   timezone?:string;upload_times?:string[];last_run_date?:string|Date|null;
 },now=new Date()):boolean{
   if(!config.is_enabled||!Array.isArray(config.csv_rows)||config.csv_rows.length===0||
-    !Number.isInteger(config.csv_cursor)||config.csv_cursor!>=config.csv_rows.length){
+    typeof config.csv_cursor!=="number"||!Number.isInteger(config.csv_cursor)||
+    config.csv_cursor<0||config.csv_cursor>=config.csv_rows.length){
     return false;
   }
   const timezone=typeof config.timezone==="string"&&config.timezone?config.timezone:"UTC";
