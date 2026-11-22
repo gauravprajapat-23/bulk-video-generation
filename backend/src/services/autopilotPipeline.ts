@@ -10,6 +10,7 @@ import sql from "../db";
 import { renderAllPages, extractTextOverlays } from "./imageRenderer";
 import { renderVideoWithRemotion, type SlideData } from "../remotion/render";
 import { uploadVideoForUser } from "./youtubeUpload";
+import { validateAutopilotRenderBounds } from "./autopilotBounds";
 import type { AutopilotConfig, AnimationPreset, BulkImageDesign, DesignPage } from "../types";
 
 const DEFAULT_ANIMATION_PRESET: AnimationPreset = {
@@ -125,6 +126,7 @@ export async function runAutopilotTickForConfig(
   let cursorPersisted = false;
 
   try {
+  validateAutopilotRenderBounds(config);
   const design: BulkImageDesign = config.design_data;
   if (!design?.pages || design.pages.length === 0) {
     result.errors.push("No design pages");
@@ -217,7 +219,8 @@ export async function runAutopilotTickForConfig(
             description: description.slice(0, 5000),
             tags: config.default_tags || [],
             categoryId: config.default_category_id || "22",
-            visibility: config.default_visibility || "private",
+            visibility: config.default_visibility==="public" && process.env.AUTOPILOT_PUBLIC_UPLOAD_ENABLED==="true"
+              ? "public" : config.default_visibility==="unlisted" ? "unlisted" : "private",
             madeForKids: config.default_made_for_kids || false,
           },
         );
