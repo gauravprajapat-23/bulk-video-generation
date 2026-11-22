@@ -82,6 +82,15 @@ router.patch("/:id", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { id } = req.params;
   const { status, scheduledAt, metadata } = req.body ?? {};
+  if (scheduledAt!==undefined && (typeof scheduledAt!=="string" ||
+    !Number.isFinite(Date.parse(scheduledAt)) || Date.parse(scheduledAt)<=Date.now())) {
+    res.status(400).json({error:"Schedule must be a valid future date"});return;
+  }
+  // Channel/visibility cannot be changed by an unrestricted metadata patch.
+  // Creation checks ownership; preserve the original channel and metadata.
+  if(metadata!==undefined){
+    res.status(400).json({error:"Schedule metadata cannot be changed after channel authorization; recreate the schedule"});return;
+  }
   if (status !== undefined && !["pending", "paused"].includes(status)) {
     res.status(400).json({ error: "Only pending and paused are allowed client statuses" });
     return;
