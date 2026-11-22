@@ -116,11 +116,33 @@ router.post("/google-token", async (req: Request, res: Response) => {
     res.status(429).json({error:"Too many sign-in attempts. Retry later."});return;
   }
   const { accessToken } = req.body ?? {};
-  if (!accessToken) {
-    res.status(400).json({ error: "accessToken is required" });
+  if (typeof accessToken !== "string" || accessToken.length < 12 || accessToken.length > 4096) {
+    res.status(400).json({ error: "Valid accessToken is required" });
     return;
   }
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    res.status(503).json({ error: "Google sign-in unavailable" });return;
+  }
   try {
+    // Userinfo alone does not prove that this token was issued to our app.
+    // Google tokeninfo exposes the OAuth client that requested the token.
+    const introspection=await fetch(
+      "https://oauth2.googleapis.com/tokeninfo?access_token="+encodeURIComponent(accessToken));
+    if(!introspection.ok){
+      res.status(401).json({error:"Google token invalid"});return;
+    }
+    const grant=await introspection.json() as {
+      azp?:string;issued_to?:string;aud?:string;audience?:string;
+      sub?:string;expires_in?:string|number;scope?:string;
+    };
+    const clientId=grant.azp||grant.issued_to||grant.aud||grant.audience;
+    if(clientId!==process.env.GOOGLE_CLIENT_ID||
+      (grant.expires_in!==undefined&&Number(grant.expires_in)<=0)||
+      typeof grant.scope!=="string"||
+      !grant.scope.includes("https://www.googleapis.com/auth/userinfo.email")){
+      res.status(401).json({error:"Google token is not authorized for this application"});
+      return;
+    }
     const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
@@ -135,6 +157,9 @@ router.post("/google-token", async (req: Request, res: Response) => {
       return;
     }
     const userId = googleUser.id || googleUser.sub;
+    if(grant.sub && grant.sub !== userId){
+      res.status(401).json({error:"Google account identity mismatch"});return;
+    }
     if (!userId) {
       res.status(401).json({ error: "Could not determine Google user ID" });
       return;
