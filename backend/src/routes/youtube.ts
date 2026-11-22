@@ -7,13 +7,15 @@ import {createReadStream} from "node:fs";
 
 const router = Router();
 
-async function getRefreshedClient(userId: string) {
-  const rows = await sql`
-    SELECT * FROM user_youtube_tokens
-    WHERE user_id = ${userId}
-    ORDER BY connected_at DESC
-    LIMIT 1
-  `;
+async function getRefreshedClient(userId: string, targetChannelId?:string) {
+  const rows = targetChannelId
+    ? await sql`SELECT * FROM user_youtube_tokens WHERE user_id=${userId}
+        AND channel_id=${targetChannelId} AND refresh_token IS NOT NULL LIMIT 1`
+    : await sql`SELECT * FROM user_youtube_tokens WHERE user_id=${userId}
+        AND refresh_token IS NOT NULL ORDER BY connected_at DESC LIMIT 2`;
+  if(!targetChannelId && rows.length>1){
+    throw new Error("Multiple channels connected; specify channelId");
+  }
   if (rows.length === 0 || !rows[0].refresh_token) return null;
 
   const tokenRow = rows[0];
@@ -79,7 +81,7 @@ router.delete("/channels/:channelId", requireAuth, async (req: Request, res: Res
 
 router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
-  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl } = req.body;
+  const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl, channelId } = req.body;
 
   if(typeof title!=="string"||!title.trim()||title.length>100||
     typeof videoUrl!=="string"||videoUrl.length>2048||
@@ -88,7 +90,10 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
       !Number.isFinite(Date.parse(publishAt))||Date.parse(publishAt)<=Date.now()))||
     (tags!==undefined&&(!Array.isArray(tags)||tags.length>50||
       tags.some((t:unknown)=>typeof t!=="string"||t.length>100)))||
-    (madeForKids!==undefined&&typeof madeForKids!=="boolean")){
+    (madeForKids!==undefined&&typeof madeForKids!=="boolean")||
+    (channelId!==undefined&&(typeof channelId!=="string"||channelId.length>200))||
+    (description!==undefined&&(typeof description!=="string"||description.length>5000))||
+    (categoryId!==undefined&&(typeof categoryId!=="string"||!/^[0-9]{1,3}$/.test(categoryId)))){
     res.status(400).json({error:"Invalid title, video reference, visibility, schedule or metadata"});return;
   }
   if (!title || !videoUrl) {
@@ -96,7 +101,9 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
     return;
   }
 
-  const client = await getRefreshedClient(userId);
+  let client;
+  try{client=await getRefreshedClient(userId,channelId);}
+  catch{res.status(409).json({error:"Select a connected server YouTube channel explicitly"});return;}
   if (!client) {
     res.status(400).json({ error: "No YouTube channel connected. Please connect via /api/auth/google first." });
     return;
