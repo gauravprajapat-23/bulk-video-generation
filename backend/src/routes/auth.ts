@@ -4,6 +4,7 @@ import crypto from "crypto";
 import sql from "../db";
 import { requireAuth, signToken } from "../middleware/auth";
 import {allowGoogleLoginAttempt} from "../services/loginRateLimit";
+import {isAcceptedGoogleAccessGrant} from "../services/googleTokenGrant";
 
 const router = Router();
 const YOUTUBE_SCOPES = [
@@ -127,7 +128,8 @@ router.post("/google-token", async (req: Request, res: Response) => {
     // Userinfo alone does not prove that this token was issued to our app.
     // Google tokeninfo exposes the OAuth client that requested the token.
     const introspection=await fetch(
-      "https://oauth2.googleapis.com/tokeninfo?access_token="+encodeURIComponent(accessToken));
+      "https://oauth2.googleapis.com/tokeninfo?access_token="+encodeURIComponent(accessToken),
+      {signal:AbortSignal.timeout(10000)});
     if(!introspection.ok){
       res.status(401).json({error:"Google token invalid"});return;
     }
@@ -135,16 +137,12 @@ router.post("/google-token", async (req: Request, res: Response) => {
       azp?:string;issued_to?:string;aud?:string;audience?:string;
       sub?:string;expires_in?:string|number;scope?:string;
     };
-    const clientId=grant.azp||grant.issued_to||grant.aud||grant.audience;
-    if(clientId!==process.env.GOOGLE_CLIENT_ID||
-      (grant.expires_in!==undefined&&Number(grant.expires_in)<=0)||
-      typeof grant.scope!=="string"||
-      !grant.scope.includes("https://www.googleapis.com/auth/userinfo.email")){
+    if(!isAcceptedGoogleAccessGrant(grant,process.env.GOOGLE_CLIENT_ID)){
       res.status(401).json({error:"Google token is not authorized for this application"});
       return;
     }
     const response = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      signal:AbortSignal.timeout(10000),headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (!response.ok) {
       res.status(401).json({ error: "Invalid Google access token" });
