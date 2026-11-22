@@ -29,6 +29,15 @@ test("untrusted Autopilot canvas and content cannot allocate unbounded server re
   assert.throws(()=>validateAutopilotRenderBounds({...valid,videos_per_day:100}),/1–10/);
   assert.throws(()=>validateAutopilotRenderBounds({...valid,csv_rows:Array(10001).fill({})}),/CSV/);
 });
+test("Autopilot rejects pathological CSV expansion and nonfinite canvas elements",()=>{
+  assert.throws(()=>validateAutopilotRenderBounds({...valid,
+    csv_rows:[{headline:"x".repeat(2001)}]}),/2000/);
+  assert.throws(()=>validateAutopilotRenderBounds({...valid,
+    csv_rows:[Object.fromEntries(Array.from({length:101},(_,i)=>["col"+i,"x"]))]}),/100 columns/);
+  assert.throws(()=>validateAutopilotRenderBounds({...valid,design_data:{
+    ...valid.design_data,pages:[{elements:[{type:"text",text:"hi",x:Infinity}]}],
+  }}),/dimensions/);
+});
 test("legacy Autopilot does not buffer MP4 or silently publicize videos",()=>{
   const code=source("services/autopilotPipeline.ts");
   assert.match(code,/validateAutopilotRenderBounds\(config\)/);
