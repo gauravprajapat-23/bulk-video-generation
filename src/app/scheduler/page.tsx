@@ -58,6 +58,7 @@ import {
   autoLoginWithGoogle,
   createSchedule as createServerSchedule,
   listSchedules as listServerSchedules,
+  listYouTubeChannels as listServerYouTubeChannels,
   updateSchedule as updateServerSchedule,
   deleteSchedule as deleteServerSchedule,
   createAutomationRule as createServerAutomationRule,
@@ -528,6 +529,18 @@ function UploadSchedulerContent() {
       }
     }
 
+    // Bind the server schedule to the intended channel, never the latest OAuth account.
+    let chosenServerChannel:string;
+    try{
+      const connected=await listServerYouTubeChannels() as Array<{channel_id:string}>;
+      const requested=connected.find(x=>x.channel_id===youtube.channelId);
+      const choice=requested||(connected.length===1?connected[0]:undefined);
+      if(!choice)throw new Error("Connect or select the correct server YouTube channel first");
+      chosenServerChannel=choice.channel_id;
+    }catch(err){
+      show(err instanceof Error?err.message:"Cannot verify server YouTube channel","error");
+      return;
+    }
     setBusy(true);
     const failures: string[] = [];
 
@@ -551,6 +564,7 @@ function UploadSchedulerContent() {
           categoryId: row.categoryId,
           visibility: "private" as const,
           madeForKids: row.madeForKids,
+          channelId: chosenServerChannel,
         };
 
         if (!project.outputBlobKey) throw new Error("Render the video before scheduling");
