@@ -2,7 +2,8 @@ import { Router, Request, Response } from "express";
 import { google } from "googleapis";
 import { requireAuth } from "../middleware/auth";
 import sql from "../db";
-import { readOwnedVideo } from "../services/ownedMedia";
+import { resolveOwnedVideoFile } from "../services/ownedMedia";
+import {createReadStream} from "node:fs";
 
 const router = Router();
 
@@ -80,6 +81,16 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   const { userId } = (req as any).auth;
   const { title, description, tags, categoryId, visibility, madeForKids, publishAt, videoUrl } = req.body;
 
+  if(typeof title!=="string"||!title.trim()||title.length>100||
+    typeof videoUrl!=="string"||videoUrl.length>2048||
+    (visibility!==undefined&&!["private","unlisted","public"].includes(visibility))||
+    (publishAt!==undefined&&(typeof publishAt!=="string"||
+      !Number.isFinite(Date.parse(publishAt))||Date.parse(publishAt)<=Date.now()))||
+    (tags!==undefined&&(!Array.isArray(tags)||tags.length>50||
+      tags.some((t:unknown)=>typeof t!=="string"||t.length>100)))||
+    (madeForKids!==undefined&&typeof madeForKids!=="boolean")){
+    res.status(400).json({error:"Invalid title, video reference, visibility, schedule or metadata"});return;
+  }
   if (!title || !videoUrl) {
     res.status(400).json({ error: "title and videoUrl are required" });
     return;
@@ -92,7 +103,7 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
   }
 
   try {
-    const { buffer, mimeType } = await readOwnedVideo(userId, videoUrl);
+    const { filePath, mimeType } = await resolveOwnedVideoFile(userId, videoUrl);
 
     const youtube = google.youtube({ version: "v3", auth: client.oauth2Client });
 
@@ -113,11 +124,12 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
       },
       media: {
         mimeType,
-        body: new (require("stream").Readable)({ read() { this.push(buffer); this.push(null); } }),
+        body: createReadStream(filePath),
       },
     });
 
     const videoId = insertRes.data.id;
+    if(!videoId)throw new Error("YouTube upload response missing video ID");
     const videoUrlResult = `https://youtube.com/watch?v=${videoId}`;
 
     const uploadRows = await sql`
@@ -131,7 +143,7 @@ router.post("/upload", requireAuth, async (req: Request, res: Response) => {
     res.json({ youtubeVideoId: videoId, youtubeVideoUrl: videoUrlResult, upload: uploadRows[0] });
   } catch (err: any) {
     console.error("[youtube] upload error:", err);
-    res.status(500).json({ error: err.message || "Upload failed" });
+    res.status(502).json({ error: "YouTube upload failed or its outcome is uncertain; check YouTube Studio before retrying" });
   }
 });
 
