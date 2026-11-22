@@ -11,6 +11,7 @@ import { renderAllPages, extractTextOverlays } from "./imageRenderer";
 import { renderVideoWithRemotion, type SlideData } from "../remotion/render";
 import { uploadVideoForUser } from "./youtubeUpload";
 import { validateAutopilotRenderBounds } from "./autopilotBounds";
+import {isAutopilotTimeDue} from "./autopilotTiming";
 import type { AutopilotConfig, AnimationPreset, BulkImageDesign, DesignPage } from "../types";
 
 const DEFAULT_ANIMATION_PRESET: AnimationPreset = {
@@ -63,30 +64,6 @@ function calculateSlideDuration(
 /**
  * Check if an autopilot config should run now based on upload times.
  */
-function isUploadTimeDue(config: Record<string, any>): boolean {
-  if (!config.is_enabled) return false;
-  if (!config.csv_rows || config.csv_rows.length === 0) return false;
-  if (config.csv_cursor >= config.csv_rows.length) return false;
-
-  const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const todayStr = now.toISOString().slice(0, 10);
-
-  if (config.last_run_date) {
-    const lastRun = new Date(config.last_run_date);
-    if (lastRun.toISOString().startsWith(todayStr)) {
-      const lastRunMinutes = lastRun.getHours() * 60 + lastRun.getMinutes();
-      if (Math.abs(currentMinutes - lastRunMinutes) <= 3) return false;
-    }
-  }
-
-  return (config.upload_times || []).some((t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    const uploadMinutes = h * 60 + m;
-    return Math.abs(currentMinutes - uploadMinutes) <= 2;
-  });
-}
-
 /**
  * Resolve template placeholders with CSV row data.
  */
@@ -314,7 +291,7 @@ export async function processAutopilotConfigs(): Promise<void> {
     if (enabledConfigs.length === 0) return;
 
     for (const config of enabledConfigs) {
-      if (!isUploadTimeDue(config)) continue;
+      if (!isAutopilotTimeDue(config)) continue;
 
       console.log(`[autopilot] running tick for config: ${config.name} (${config.id})`);
 
