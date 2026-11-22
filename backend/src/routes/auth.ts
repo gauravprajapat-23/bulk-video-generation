@@ -115,7 +115,7 @@ router.post("/google-token", async (req: Request, res: Response) => {
   if(!allowGoogleLoginAttempt(req.ip||req.socket.remoteAddress||"unknown")){
     res.status(429).json({error:"Too many sign-in attempts. Retry later."});return;
   }
-  const { accessToken } = req.body;
+  const { accessToken } = req.body ?? {};
   if (!accessToken) {
     res.status(400).json({ error: "accessToken is required" });
     return;
