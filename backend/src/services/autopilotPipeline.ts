@@ -202,7 +202,7 @@ export async function runAutopilotTickForConfig(
         // 4. Upload to YouTube
         await sql`UPDATE autopilot_jobs SET status = 'uploading' WHERE id = ${jobId}`;
 
-        const videoBuffer = fs.readFileSync(renderResult.outputPath);
+        // YouTube upload streams the rendered MP4; do not buffer the whole file in memory.
         const title = resolveTemplate(config.default_title_template || "{{headline}} #shorts", row);
         const description = resolveTemplate(config.default_description_template || "{{description}}", row);
 
@@ -210,14 +210,14 @@ export async function runAutopilotTickForConfig(
         uncertainUpload = true;
         const uploadResult = await uploadVideoForUser(
           config.user_id,
-          videoBuffer,
+          renderResult.outputPath,
           "video/mp4",
           {
             title: title.slice(0, 100),
             description: description.slice(0, 5000),
             tags: config.default_tags || [],
             categoryId: config.default_category_id || "22",
-            visibility: config.default_visibility || "public",
+            visibility: config.default_visibility || "private",
             madeForKids: config.default_made_for_kids || false,
           },
         );
