@@ -58,7 +58,11 @@ function calculateSlideDuration(
   else minDuration = 4000;
 
   const calculated = transitionBudget + animationTimeMs + readingTimeMs + READABLE_PAUSE_MS;
-  return Math.max(minDuration, calculated, fallbackDurationMs ?? 0);
+  const duration=Math.max(minDuration, calculated, fallbackDurationMs ?? 0);
+  if(!Number.isFinite(duration)||duration>120_000){
+    throw new Error("Autopilot slide duration exceeds two-minute safety limit");
+  }
+  return duration;
 }
 
 /**
